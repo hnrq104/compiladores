@@ -1,3 +1,7 @@
+-- Disciplina: Compiladores
+-- Professor: Hugo Musso
+-- Aluno: Henrique (122078397)
+
 -- tables
 local reserved_words = {
     "and", "break", "do", "else", "elseif", "end",
@@ -51,7 +55,6 @@ local function initLexerState()
 end
 
 -- AUXILIARY FUNCTIONS
-
 local function isCharInStr(char, str)
     for i = 1, #str do
         if char == str:sub(i, i) then return true end
@@ -75,7 +78,6 @@ end
 local function isAlphaNumeric(char)
     return isLetter(char) or isNumber(char)
 end
-
 
 local function readCharInString(ls)
     local escaped_table = {
