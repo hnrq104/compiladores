@@ -144,10 +144,12 @@ local function readNumber(ls)
     while isNumber(ls.chars[1]) or isCharInStr(string.lower(ls.chars[1]), "abcdef")
         or (first_dot and ls.chars[1] == '.') do
         -- conditional too long, had to put a \n for luacheck :)
-
-        is_hexa_complete = true -- could optimize but really why
         n = n .. ls.chars[1]
-        if ls.chars[1] == '.' then first_dot = false end
+        if ls.chars[1] == '.' then
+            first_dot = false
+        else
+            is_hexa_complete = true
+        end -- could optimize but really why
         updateLexerState(ls)
     end
 
