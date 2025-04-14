@@ -255,7 +255,7 @@ local function readComment(ls)
     local comment_depth = readOpenBrackets(ls)
     -- small comment
     if comment_depth == 0 then
-        while ls.chars[1] ~= '\n' do
+        while ls.chars[1] ~= '\n' and ls.chars[1] ~= nil do
             updateLexerState(ls)
         end
         updateLexerState(ls)
