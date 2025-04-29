@@ -373,40 +373,42 @@ local parserBinaryPrecedence = {
     ["/"] = 3,
     ["%"] = 3,
 
-    -- ["^"] = 4
+    ["^"] = 4
 }
 
 local function Prec(tag)
     return parserBinaryPrecedence[tag]
 end
 
+
+-- 1 for left associativity, 0 for right associativity
+local parserBinaryAssociativity = {
+    ["<"] = 1,
+    [">"] = 1,
+    ["<="] = 1,
+    [">="] = 1,
+    ["=="] = 1,
+    ["~="] = 1,
+
+    ["+"] = 1,
+    ["-"] = 1,
+
+    ["*"] = 1,
+    ["/"] = 1,
+    ["%"] = 1,
+
+    ["^"] = 0,
+    [".."] = 0
+}
+
+local function Assoc(tag)
+    return parserBinaryAssociativity[tag]
+end
+
+
 local parserUnaryOps = {
     ["NOT"] = true, ["-"] = true
 }
-
---[[
-
--- True for left associativity, false for right associativity
-local parserBinaryAssociativity = {
-    ["<"] = true,
-    [">"] = true,
-    ["<="] = true,
-    [">="] = true,
-    ["=="] = true,
-    ["~="] = true,
-
-    ["+"] = true,
-    ["-"] = true,
-
-    ["*"] = true,
-    ["/"] = true,
-    ["%"] = true,
-
-    ["^"] = false,
-    [".."] = false
-}
-]]
-
 
 local function makeExpNil()
     return {
@@ -489,7 +491,7 @@ local function parseGetArgs(ps)
 
     args[#args + 1] = parseExp(ps)
     while ps.nextToken.Tag == ',' do
-        advanceParser(PS)
+        advanceParser(ps)
         args[#args + 1] = parseExp(ps)
     end
     return args
@@ -501,7 +503,8 @@ local function parseSufixada(ps)
     while ps.nextToken.Tag == "(" do
         advanceParser(ps)
 
-        local args = nil
+        --  local args = nil
+        local args = {}
         if ps.nextToken.Tag ~= ")" then
             args = parseGetArgs(ps)
         end
@@ -554,7 +557,7 @@ local function parseBinopExp(ps, min_prec)
     while Prec(ps.nextToken.Tag) and Prec(ps.nextToken.Tag) >= min_prec do
         local op = ps.nextToken.Tag
         advanceParser(ps)
-        local rhs = parseBinopExp(ps, Prec(op) + 1)
+        local rhs = parseBinopExp(ps, Prec(op) + Assoc(op))
 
         e = makeBinop(op, e, rhs)
     end
@@ -589,12 +592,12 @@ local function EvaluateExp(exp)
             error("erro ao tentar ler expressao como funcao")
         end
 
-        local arg_val
-        if #exp.Args > 0 then
-            arg_val = EvaluateExp(exp.Args[1])
+        local args_val = {}
+        for i = 1, #exp.Args do
+            args_val[#args_val + 1] = EvaluateExp(exp.Args[i])
         end
 
-        return fun(arg_val)
+        return fun(table.unpack(args_val))
     end
 
     if exp.Tag == "EXPUNOP" then
@@ -646,6 +649,10 @@ local function EvaluateExp(exp)
 
         if exp.Op == "%" then
             return EvaluateExp(exp.Exp1) % EvaluateExp(exp.Exp2)
+        end
+
+        if exp.Op == "^" then
+            return EvaluateExp(exp.Exp1) ^ EvaluateExp(exp.Exp2)
         end
     end
 end
