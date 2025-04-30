@@ -548,7 +548,7 @@ local function parseUnopExp(ps)
         advanceParser(ps)
         return makeUnop(tag, parseUnopExp(ps))
     end
-    return parseSimples(PS)
+    return parseSimples(ps)
 end
 
 local function parseBinopExp(ps, min_prec)
