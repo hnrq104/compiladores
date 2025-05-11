@@ -338,8 +338,6 @@ StartCol, EndCol : (coluna que o token começa e termina)
 StartLine, EndLine : (linha que o token começa e termina)
 ]]
 
-
-
 -- PARSER
 local function syntaxError(tag, line, column)
     error(string.format("syntax error '%s' %d:%d.", tag, line, column))
@@ -347,17 +345,18 @@ end
 
 
 local PS = { -- stands for Parser State
-    nextToken = getToken(LS),
-    -- if more stuff is needed later we may add it
+    -- nextToken = getToken(LS),
+    tokens = { getToken(LS), getToken(LS) }
 }
 
 
 local function advanceParser(ps)
-    ps.nextToken = getToken(LS)
+    ps.tokens[1], ps.tokens[2] = ps.tokens[2], getToken(LS)
+    -- ps.nextToken = getToken(LS)
 end
 
 local function comeParser(ps, tag)
-    local tk = ps.nextToken
+    local tk = ps.tokens[1]
     if tk.Tag == tag then
         advanceParser(ps)
     else
@@ -367,21 +366,21 @@ end
 
 
 local parserBinaryPrecedence = {
-    ["<"] = 1,
-    [">"] = 1,
-    ["<="] = 1,
-    [">="] = 1,
-    ["=="] = 1,
-    ["~="] = 1,
+    ["<"] = 10,
+    [">"] = 10,
+    ["<="] = 10,
+    [">="] = 10,
+    ["=="] = 10,
+    ["~="] = 10,
 
-    ["+"] = 2,
-    ["-"] = 2,
+    ["+"] = 20,
+    ["-"] = 20,
 
-    ["*"] = 3,
-    ["/"] = 3,
-    ["%"] = 3,
+    ["*"] = 30,
+    ["/"] = 30,
+    ["%"] = 30,
 
-    ["^"] = 4
+    -- ["^"] = 40
 }
 
 local function Prec(tag)
@@ -405,7 +404,7 @@ local parserBinaryAssociativity = {
     ["/"] = 1,
     ["%"] = 1,
 
-    ["^"] = 0,
+    -- ["^"] = 0,
     [".."] = 0
 }
 
@@ -475,7 +474,7 @@ end
 local parseExp
 
 local function parsePrimaria(ps)
-    local tk = ps.nextToken
+    local tk = ps.tokens[1]
     if tk.Tag == "NAME" then
         local exp = makeExpName(tk.Value)
         advanceParser(ps)
@@ -498,7 +497,7 @@ local function parseGetArgs(ps)
     local args = {}
 
     args[#args + 1] = parseExp(ps)
-    while ps.nextToken.Tag == ',' do
+    while ps.tokens[1].Tag == ',' do
         advanceParser(ps)
         args[#args + 1] = parseExp(ps)
     end
@@ -508,12 +507,12 @@ end
 -- isso é de certa forma associatiov a esquerda com ()
 local function parseSufixada(ps)
     local e = parsePrimaria(ps)
-    while ps.nextToken.Tag == "(" do
+    while ps.tokens[1].Tag == "(" do
         advanceParser(ps)
 
         --  local args = nil
         local args = {}
-        if ps.nextToken.Tag ~= ")" then
+        if ps.tokens[1].Tag ~= ")" then
             args = parseGetArgs(ps)
         end
 
@@ -526,23 +525,23 @@ local function parseSufixada(ps)
 end
 
 local function parseSimples(ps)
-    if ps.nextToken.Tag == "NIL" then
+    if ps.tokens[1].Tag == "NIL" then
         advanceParser(ps)
         return makeExpNil()
     end
 
-    if ps.nextToken.Tag == "TRUE" then
+    if ps.tokens[1].Tag == "TRUE" then
         advanceParser(ps)
         return makeExpBool(true)
     end
 
-    if ps.nextToken.Tag == "FALSE" then
+    if ps.tokens[1].Tag == "FALSE" then
         advanceParser(ps)
         return makeExpBool(false)
     end
 
-    if ps.nextToken.Tag == "NUMBER" then
-        local num = ps.nextToken.Value
+    if ps.tokens[1].Tag == "NUMBER" then
+        local num = ps.tokens[1].Value
         advanceParser(ps)
         return makeExpInt(num)
     end
@@ -550,20 +549,31 @@ local function parseSimples(ps)
     return parseSufixada(ps)
 end
 
-local function parseUnopExp(ps)
-    local tag = ps.nextToken.Tag
+local parseUnopExp
+
+local function parseExponentExp(ps)
+    local s = parseSimples(ps)
+    if ps.tokens[1].Tag == '^' then
+        advanceParser(ps)
+        return makeBinop("^", s, parseUnopExp(ps))
+    end
+    return s
+end
+
+function parseUnopExp(ps)
+    local tag = ps.tokens[1].Tag
     if parserUnaryOps[tag] then
         advanceParser(ps)
         return makeUnop(tag, parseUnopExp(ps))
     end
-    return parseSimples(ps)
+    return parseExponentExp(ps)
 end
 
 local function parseBinopExp(ps, min_prec)
     local e = parseUnopExp(ps)
 
-    while Prec(ps.nextToken.Tag) and Prec(ps.nextToken.Tag) >= min_prec do
-        local op = ps.nextToken.Tag
+    while Prec(ps.tokens[1].Tag) and Prec(ps.tokens[1].Tag) >= min_prec do
+        local op = ps.tokens[1].Tag
         advanceParser(ps)
         local rhs = parseBinopExp(ps, Prec(op) + Assoc(op))
 
@@ -574,7 +584,7 @@ local function parseBinopExp(ps, min_prec)
 end
 
 function parseExp(ps)
-    if ps.nextToken.Tag == "EOF" then
+    if ps.tokens[1].Tag == "EOF" then
         return nil
     end
     return parseBinopExp(ps, 0)
