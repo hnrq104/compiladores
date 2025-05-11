@@ -295,7 +295,7 @@ local function getToken(ls)
     end
 
     -- NUMBERS
-    if isNumber(ls.chars[1]) or (ls.chars[1] == '.' and isNumber(ls.chars[2])) then
+    if isNumber(ls.chars[1]) then
         return readNumber(ls)
     end
 
@@ -339,8 +339,8 @@ StartLine, EndLine : (linha que o token começa e termina)
 ]]
 
 -- PARSER
-local function syntaxError(tag, line, column)
-    error(string.format("syntax error '%s' %d:%d.", tag, line, column))
+local function syntaxError(tok)
+    error(string.format("syntax error '%s' %d:%d.", tok.Tag, tok.StartLine, tok.StartCol))
 end
 
 
@@ -350,8 +350,11 @@ local PS = { -- stands for Parser State
 }
 
 
-local function advanceParser(ps)
-    ps.tokens[1], ps.tokens[2] = ps.tokens[2], getToken(LS)
+local function advanceParser(ps, n_iterations)
+    n_iterations = n_iterations or 1
+    for _ = 1, n_iterations do
+        ps.tokens[1], ps.tokens[2] = ps.tokens[2], getToken(LS)
+    end
     -- ps.nextToken = getToken(LS)
 end
 
@@ -360,12 +363,15 @@ local function comeParser(ps, tag)
     if tk.Tag == tag then
         advanceParser(ps)
     else
-        syntaxError(tk.Tag, tk.StartLine, tk.StartCol)
+        syntaxError(tk)
     end
 end
 
 
 local parserBinaryPrecedence = {
+    ["AND"] = 5,
+    ["OR"] = 6,
+
     ["<"] = 10,
     [">"] = 10,
     ["<="] = 10,
@@ -390,6 +396,10 @@ end
 
 -- 1 for left associativity, 0 for right associativity
 local parserBinaryAssociativity = {
+    ["AND"] = 1,
+    ["OR"] = 1,
+
+
     ["<"] = 1,
     [">"] = 1,
     ["<="] = 1,
@@ -488,12 +498,12 @@ local function parsePrimaria(ps)
         return exp
     end
 
-    syntaxError(tk.Tag, tk.StartLine, tk.StartCol)
+    syntaxError(tk)
 end
 
 -- retorna uma lista de expressoes que são os argumentos
 -- testar depois talvez
-local function parseGetArgs(ps)
+local function parseGetExplist(ps)
     local args = {}
 
     args[#args + 1] = parseExp(ps)
@@ -504,10 +514,15 @@ local function parseGetArgs(ps)
     return args
 end
 
+
 -- isso é de certa forma associatiov a esquerda com ()
+
+local parseSufixada -- refiz abaixo para o trab 3
+--[[
 local function parseSufixada(ps)
     local e = parsePrimaria(ps)
     while ps.tokens[1].Tag == "(" do
+
         advanceParser(ps)
 
         --  local args = nil
@@ -523,6 +538,9 @@ local function parseSufixada(ps)
     end
     return e
 end
+]]
+
+local parseTableConstructor
 
 local function parseSimples(ps)
     if ps.tokens[1].Tag == "NIL" then
@@ -544,6 +562,10 @@ local function parseSimples(ps)
         local num = ps.tokens[1].Value
         advanceParser(ps)
         return makeExpInt(num)
+    end
+
+    if ps.tokens[1].Tag == "{" then
+        return parseTableConstructor(ps)
     end
 
     return parseSufixada(ps)
@@ -583,11 +605,112 @@ local function parseBinopExp(ps, min_prec)
     return e
 end
 
+
 function parseExp(ps)
     if ps.tokens[1].Tag == "EOF" then
         return nil
     end
     return parseBinopExp(ps, 0)
+end
+
+--Trabalho 3
+-- consertos dos trabalhos anteriores:
+-- consertei precedência do '^'
+-- consertei erro de eof no lexer
+-- consertei erro de leitura de numeros hexa e float
+-- o que falta:
+-- table constructor/ tbl index
+-- while, if
+-- var assignment
+-- consertar parse sufixo
+
+local function makeField(expKey, expVal)
+    return { Tag = "TBLFIELD", ExpKey = expKey, ExpVal = expVal }
+end
+
+local function makeTblConstructor(fields)
+    return { Tag = "TBLCONST", Fields = fields }
+end
+
+local function makeTblIndex(expTbl, expKey)
+    return { Tag = "TBLINDEX", Table = expTbl, Index = expKey }
+end
+
+
+local function isSuffix(tag)
+    return tag == "." or tag == "(" or tag == "["
+end
+
+---
+function parseSufixada(ps)
+    local e = parsePrimaria(ps)
+
+    while isSuffix(ps.tokens[1].Tag) do
+        if ps.tokens[1].Tag == "(" then
+            advanceParser(ps)
+
+            local args = {}
+            if ps.tokens[1].Tag ~= ")" then
+                args = parseGetExplist(ps)
+            end
+            comeParser(ps, ")")
+            e = makeExpCall(e, args)
+        elseif ps.tokens[1].Tag == "[" then
+            advanceParser(ps)
+
+            local key_arg = parseExp(ps)
+            comeParser(ps, "]")
+            e = makeTblIndex(e, key_arg)
+        else -- tok.tag = .
+            advanceParser(ps)
+
+            if ps.tokens[1].Tag == "NAME" then
+                e = makeTblIndex(e, makeExpName(ps.tokens[1].Value))
+            end
+            comeParser(ps, "NAME")
+        end
+    end
+    return e
+end
+
+local function parseField(ps)
+    local expkey = nil
+
+    if ps.tokens[1].Tag == '[' then
+        advanceParser(ps)
+        expkey = parseExp(ps)
+        comeParser(ps, ']')
+        comeParser(ps, '=')
+        return makeField(expkey, parseExp(ps))
+    end
+
+    if ps.tokens[1].Tag == "NAME" and ps.tokens[2].Tag == '=' then
+        expkey = makeExpName(ps.tokens[1].Value)
+        advanceParser(ps, 2)
+    end
+
+    return makeField(expkey, parseExp(ps))
+end
+
+local function isFieldSep(tag)
+    return tag == ',' or tag == ';'
+end
+
+function parseTableConstructor(ps)
+    comeParser(ps, "{")
+    local fields = {}
+
+    if ps.tokens[1].Tag ~= '}' then
+        fields[#fields + 1] = parseField(ps)
+        while isFieldSep(ps.tokens[1].Tag) do
+            advanceParser(ps)
+            if ps.tokens[1].Tag ~= "}" then
+                fields[#fields + 1] = parseField(ps)
+            end
+        end
+    end
+    comeParser(ps, '}')
+    return makeTblConstructor(fields)
 end
 
 local inspect = require("inspect")
