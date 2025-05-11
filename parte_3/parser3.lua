@@ -150,7 +150,7 @@ end
 
 local function readNumber(ls)
     if ls.chars[1] == "0" and isCharInStr(ls.chars[2], "xX") then
-        return readHexaNumber()
+        return readHexaNumber(ls)
     end
     local start_l, start_c = ls.currentLine, ls.currentColumn
     local n = ""
@@ -518,27 +518,6 @@ end
 -- isso é de certa forma associatiov a esquerda com ()
 
 local parseSufixada -- refiz abaixo para o trab 3
---[[
-local function parseSufixada(ps)
-    local e = parsePrimaria(ps)
-    while ps.tokens[1].Tag == "(" do
-
-        advanceParser(ps)
-
-        --  local args = nil
-        local args = {}
-        if ps.tokens[1].Tag ~= ")" then
-            args = parseGetArgs(ps)
-        end
-
-        --local arg = parseExp(ps)
-        comeParser(ps, ")")
-
-        e = makeExpCall(e, args)
-    end
-    return e
-end
-]]
 
 local parseTableConstructor
 
