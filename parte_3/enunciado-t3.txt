@@ -1,0 +1,173 @@
+TRABALHO 3 - TABELAS E GLOBAIS
+==============================
+
+Formato de entrega
+------------------
+
+NOVA REGRA: O arquivo ZIP deve ter o seu nome.
+NOVA REGRA: O seu programa deve ler da entrada padrão.
+
+Data de entrega: 21/05 23:55
+Entregue um arquivo .zip ou tar.gz
+Inclua um README explicando como rodar o programa
+Em cada arquivo, inclua um comentário com o seu nome.
+
+NÃO DISPONIBILIZE O SEU TRABALHO PUBLICAMENTE NA INTERNET.
+SE USAR O GITHUB, USE UM REPOSITÓRIO PRIVADO.
+
+
+Tarefa
+------
+
+Agora, além de expressões aritméticas, o seu programa também deve saber
+lidar com comandos de atribuição, ifs, e whiles. Também deve implementar
+novos tipos de dados: booleanos e tabelas.
+
+    x = 10
+    y = 20
+    if x <= 50 then
+        print(x+y)
+    else
+        y = 5
+    end
+
+Exemplo com tabelas:
+
+    xs = {}
+    i = 1
+    while i <= 10
+       xs[i] = i * 2
+       i = i + 1
+    end
+
+
+PARA FACILITAR, PODE ASSUMIR POR ENQUANTO QUE PRINT É A ÚNICA FUNÇÃO.
+
+
+Gramática
+---------
+
+Obs.: talvez você precise remover recursão à esquerda e tratar ambiguidades
+oriundas de associatividade e precedência.
+
+    Programa -> Bloco
+
+    Bloco -> Comando*
+
+    Comando ->
+        | ExpSufixada           // obs.: chamada de função print
+        | ExpSufixada '=' Exp   // obs.: atribuição
+        | 'if' Exp 'then' Bloco Elses
+        | 'while' Exp 'do' Bloco 'end'
+
+    Elses ->
+        | 'end'
+        | 'else' Bloco 'end'
+        | 'elseif' Exp 'then' Bloco Elses
+
+    Exp ->
+        | ExpSimples
+        | Unop Exp
+        | Exp Binop Exp
+
+    ExpSimples ->
+        | ExpSufixada
+        | true
+        | false
+        | INT
+        | {}
+
+    ExpSufixada ->
+        | ExpPrimaria
+        | ExpSufixada '(' Exp ')'
+        | ExpSufixada '[' Exp ']'
+
+    ExpPrimaria ->
+        | '(' Exp ')'
+        | NOME
+
+    Unop -> not | -
+
+    Binop ->
+        | + | - | * | / |  %
+        | < | > | <= | >= | ~= | ==
+
+Precedência e associatividade
+-----------------------------
+
+Siga as precedências e associatividades de Lua.
+
+    TABELA DE PRECEDÊNCIA
+    1   or
+    2   and
+    3   < > <= >= ~= ==
+    4   + -
+    5   * / %
+    6   unários
+    7   sufixos (chamada de função)
+
+Árvore Sintática
+----------------
+
+Construa uma árvore abstrata, com os seguintes construtores/tags
+abaixo. Não crie tags para expressão entre parênteses, nem para
+simples/sifixada/primária.
+
+    ExpNil()
+    ExpBool(valor) // NOVO
+    ExpInt(valor)
+    ExpTabela()   // NOVO
+    ExpNome(nome)
+    ExpUnop(op, exp)
+    ExpBinop(op, exp1, exp2)
+    ExpChamada(expf, args)
+
+
+    CmdSetVar(nome, exp)
+    CmdSetTbl(exp_lhs, exp_i, exp_rhs)
+    CmdPrint(exp)
+    CmdIf(exp, bloco_true, bloco_false)
+    CmdWhile(exp, bloco)
+
+Repare que não tem uma AST diferente para if-elseif.
+Represente os if-elseif usando ifs aninhados.
+
+
+Valores Em Tempo de Execução
+----------------------------
+
+Crie uma tagged union para representar os valores produzidos pelo avaliador.
+Também modifique a função de avaliação para verificar os tipos em tempo de
+execução, e produzir erros se necessário.
+
+    ValNil()
+    ValInt(n)
+    ValBool(b)
+    ValTbl(t)
+
+
+Avaliador
+---------
+
+Agora além da função para avaliar uma expressão aritmética, também temos
+funções para avaliar comandos e listas de comandos (blocos).
+
+    function evalExp(exp)
+    function evalCmd(cmd)
+    function evalBloco(cmds)
+
+Armazene os valores das variáveis globais em uma tabela.
+Essa tabela pode ser "global", ou pode ser um argument para evalExp, etc.
+
+Não se esqueça de implementar o curto circuito para "and" e "or".
+
+
+Funcionalidades Opcionais
+-------------------------
+
+    - Acesso a tabelas com notação de pontinho: "t.campo"
+    - Construtores de tabela array: {10,20,30}
+    - Construtores de tabela chave-valor: {x=10, y=20}
+    - Construtores de tabela colchetes: {["x"]=10, ["y"]=20}
+
+    - Outras funções além do print()

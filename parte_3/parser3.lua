@@ -584,10 +584,13 @@ local function parseBinopExp(ps, min_prec)
     return e
 end
 
+local function makeExpEOF()
+    return { Tag = "EOFEXP" }
+end
 
 function parseExp(ps)
     if ps.tokens[1].Tag == "EOF" then
-        return nil
+        return makeExpEOF()
     end
     return parseBinopExp(ps, 0)
 end
@@ -604,17 +607,16 @@ end
 -- consertar parse sufixo
 
 local function makeField(expKey, expVal)
-    return { Tag = "TBLFIELD", ExpKey = expKey, ExpVal = expVal }
+    return { ExpKey = expKey, ExpVal = expVal }
 end
 
-local function makeTblConstructor(fields)
-    return { Tag = "TBLCONST", Fields = fields }
+local function makeExpTblConstructor(fields)
+    return { Tag = "EXPTBLCONST", Fields = fields }
 end
 
-local function makeTblIndex(expTbl, expKey)
-    return { Tag = "TBLINDEX", Table = expTbl, Index = expKey }
+local function makeExpTblIndex(expTbl, expKey)
+    return { Tag = "EXPTBLINDEX", Table = expTbl, Index = expKey }
 end
-
 
 local function isSuffix(tag)
     return tag == "." or tag == "(" or tag == "["
@@ -639,12 +641,12 @@ function parseSufixada(ps)
 
             local key_arg = parseExp(ps)
             comeParser(ps, "]")
-            e = makeTblIndex(e, key_arg)
+            e = makeExpTblIndex(e, key_arg)
         else -- tok.tag = .
             advanceParser(ps)
 
             if ps.tokens[1].Tag == "NAME" then
-                e = makeTblIndex(e, makeExpName(ps.tokens[1].Value))
+                e = makeExpTblIndex(e, makeExpName(ps.tokens[1].Value))
             end
             comeParser(ps, "NAME")
         end
@@ -689,13 +691,146 @@ function parseTableConstructor(ps)
         end
     end
     comeParser(ps, '}')
-    return makeTblConstructor(fields)
+    return makeExpTblConstructor(fields)
+end
+
+local parseBloco
+
+-- elses_block can be nil
+local function makeIfCmd(exp_cond, block, elses_block)
+    return { Tag = "IFCMD", ExpCond = exp_cond, Block = block, Elses = elses_block }
+end
+
+-- I was thinking of doing this, but someone might be insane enough to do 100000000 elseifs
+local function parseElsesRecursively(ps)
+    if ps.tokens[1].Tag == "END" then
+        advanceParser(ps)
+        return nil
+    end
+
+    if ps.tokens[1].Tag == "ELSE" then
+        advanceParser(ps)
+        local b = parseBloco(ps)
+        comeParser(ps, "END")
+        return b
+    end
+
+    if ps.tokens[1].Tag == "ELSIF" then
+        advanceParser(ps)
+        local exp_cond = parseExp(ps)
+        comeParser(ps, "THEN")
+        local b = parseBloco(ps)
+        return makeIfCmd(exp_cond, b, parseElsesRecursively(ps))
+    end
+    syntaxError(ps.tokens[1].Tag)
+end
+
+local function parseIfCmd(ps)
+    comeParser(ps, "IF")
+    local exp_cond = parseExp(ps)
+    comeParser(ps, "THEN")
+    local main_b = parseBloco(ps)
+
+    local ifstart = makeIfCmd(exp_cond, main_b, nil)
+    local previous = ifstart
+
+    while ps.tokens[1].Tag ~= "END" do
+        if ps.tokens[1].Tag == "ELSEIF" then
+            advanceParser(ps)
+            local cond = parseExp(ps)
+            comeParser(ps, "THEN")
+            local curr = makeIfCmd(cond, parseBloco(ps), nil)
+            previous.Elses = curr
+            previous = curr
+        elseif ps.tokens[1].Tag == "ELSE" then
+            advanceParser(ps)
+            previous.Elses = parseBloco(ps)
+            break
+        else
+            syntaxError(ps.tokens[1].Tag)
+        end
+    end
+    comeParser(ps, "END")
+
+    return ifstart
+end
+
+local function makeWhileCmd(exp_cond, while_block)
+    return { Tag = exp_cond, Block = while_block }
+end
+
+local function parseWhileCmd(ps)
+    comeParser(ps, "WHILE")
+    local exp_cond = parseExp(ps)
+    comeParser(ps, "DO")
+    local b = parseBloco(ps)
+    comeParser(ps, "END")
+    return makeWhileCmd(exp_cond, b)
+end
+
+local function makeSetVarCmd(nome, exp)
+    return { Tag = "CMDSETVAR", Name = nome, ExpVal = exp }
+end
+
+local function makeSetTblCmd(exp_lhs, exp_i, exp_rhs)
+    return { Tag = "CMDSETTBL", ExpTbl = exp_lhs, ExpIndex = exp_i, ExpVal = exp_rhs }
+end
+
+local function makePrintCmd(args)
+    return { Tag = "CMDPRINT", Args = args }
+end
+
+local function makeBlock(cmds)
+    return { Tag = "CMDBLOCK", Cmds = cmds }
+end
+
+
+-- PERGUNTAR PARA HUGO COMO MELHORAR ISSO
+CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
+local function cmd_enders(tag)
+    return isInTable(tag, CMD_ENDERS)
+end
+
+
+local function parseCmd(ps)
+    if ps.tokens[1].Tag == "IF" then
+        return parseIfCmd(ps)
+    end
+
+    if ps.tokens[1].Tag == "WHILE" then
+        return parseWhileCmd(ps)
+    end
+
+    if cmd_enders(ps.tokens[1].Tag) then return nil end
+
+    -- exp sufixiada
+    local suf = parseSufixada(ps)
+    if ps.tokens[1].Tag == "=" then
+        advanceParser(ps)
+        if suf.Tag == "EXPNAME" then
+            return makeSetVarCmd(suf.Value, parseExp(ps))
+        elseif suf.Tag == "EXPTBLINDEX" then
+            return makeSetTblCmd(suf.Table, suf.Index, parseExp(ps))
+        end
+        syntaxError(ps.tokens[1])
+    end
+
+    if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
+        return makePrintCmd(suf.Args)
+    end
+
+    syntaxError(ps.tokens[1])
+end
+
+function parseBloco(ps)
+    local cmds = {}
+    local c = parseCmd(ps)
+    while c do
+        table.insert(cmds, c)
+        c = parseCmd(ps)
+    end
+    return makeBlock(cmds)
 end
 
 local inspect = require("inspect")
-
-local e = parseExp(PS)
-while e do
-    print(inspect(e))
-    e = parseExp(PS)
-end
+print(inspect(parseCmd(PS)))
