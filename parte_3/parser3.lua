@@ -339,8 +339,8 @@ StartLine, EndLine : (linha que o token começa e termina)
 ]]
 
 -- PARSER
-local function syntaxError(tok)
-    error(string.format("syntax error '%s' %d:%d.", tok.Tag, tok.StartLine, tok.StartCol))
+local function syntaxError(tok, msg)
+    error(string.format("syntax error '%s' %d:%d. :%s", tok.Tag, tok.StartLine, tok.StartCol, msg))
 end
 
 
@@ -363,7 +363,7 @@ local function comeParser(ps, tag)
     if tk.Tag == tag then
         advanceParser(ps)
     else
-        syntaxError(tk)
+        syntaxError(tk, string.format("Parser leu %s, esperava: %s", tk.Tag, tag))
     end
 end
 
@@ -498,7 +498,7 @@ local function parsePrimaria(ps)
         return exp
     end
 
-    syntaxError(tk)
+    syntaxError(tk, "Nao possivel parsear exp primaria")
 end
 
 -- retorna uma lista de expressoes que são os argumentos
@@ -702,7 +702,7 @@ local function makeIfCmd(exp_cond, block, elses_block)
 end
 
 -- I was thinking of doing this, but someone might be insane enough to do 100000000 elseifs
-local function parseElsesRecursively(ps)
+local function parseElsesRecursive(ps)
     if ps.tokens[1].Tag == "END" then
         advanceParser(ps)
         return nil
@@ -720,7 +720,7 @@ local function parseElsesRecursively(ps)
         local exp_cond = parseExp(ps)
         comeParser(ps, "THEN")
         local b = parseBloco(ps)
-        return makeIfCmd(exp_cond, b, parseElsesRecursively(ps))
+        return makeIfCmd(exp_cond, b, parseElsesRecursive(ps))
     end
     syntaxError(ps.tokens[1].Tag)
 end
@@ -747,7 +747,7 @@ local function parseIfCmd(ps)
             previous.Elses = parseBloco(ps)
             break
         else
-            syntaxError(ps.tokens[1].Tag)
+            syntaxError(ps.tokens[1].Tag, "didn't end conditional block")
         end
     end
     comeParser(ps, "END")
@@ -756,7 +756,7 @@ local function parseIfCmd(ps)
 end
 
 local function makeWhileCmd(exp_cond, while_block)
-    return { Tag = exp_cond, Block = while_block }
+    return { Tag = "WHILECMD", ExpCond = exp_cond, Block = while_block }
 end
 
 local function parseWhileCmd(ps)
@@ -786,9 +786,20 @@ end
 
 
 -- PERGUNTAR PARA HUGO COMO MELHORAR ISSO
-CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
+local CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
 local function cmd_enders(tag)
     return isInTable(tag, CMD_ENDERS)
+end
+
+local function parseSufList(ps)
+    local suf = parseSufixada(ps)
+    local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
+    while ps.tokens[1].Tag == ',' do
+        advanceParser(ps)
+        table.insert(sufs, parseSufixada(ps))
+        sufs.HasCall = (sufs[#sufs].Tag == "EXPCALL")
+    end
+    return parseSufList
 end
 
 
@@ -804,6 +815,7 @@ local function parseCmd(ps)
     if cmd_enders(ps.tokens[1].Tag) then return nil end
 
     -- exp sufixiada
+
     local suf = parseSufixada(ps)
     if ps.tokens[1].Tag == "=" then
         advanceParser(ps)
@@ -812,7 +824,7 @@ local function parseCmd(ps)
         elseif suf.Tag == "EXPTBLINDEX" then
             return makeSetTblCmd(suf.Table, suf.Index, parseExp(ps))
         end
-        syntaxError(ps.tokens[1])
+        syntaxError(ps.tokens[1], "trying to set unsettable value")
     end
 
     if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
@@ -833,4 +845,4 @@ function parseBloco(ps)
 end
 
 local inspect = require("inspect")
-print(inspect(parseCmd(PS)))
+print(inspect(parseBloco(PS)))
