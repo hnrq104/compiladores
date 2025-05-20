@@ -715,32 +715,6 @@ local function makeIfCmd(exp_cond, block, elses_block)
     return { Tag = "CMDIF", ExpCond = exp_cond, Block = block, Elses = elses_block }
 end
 
--- I was thinking of doing this, but someone might be insane enough to do 100000000 elseifs
---[[
-local function parseElsesRecursive(ps)
-    if ps.tokens[1].Tag == "END" then
-        advanceParser(ps)
-        return nil
-    end
-    
-    if ps.tokens[1].Tag == "ELSE" then
-        advanceParser(ps)
-        local b = parseBloco(ps)
-        comeParser(ps, "END")
-        return b
-    end
-    
-    if ps.tokens[1].Tag == "ELSIF" then
-        advanceParser(ps)
-        local exp_cond = parseExp(ps)
-        comeParser(ps, "THEN")
-        local b = parseBloco(ps)
-        return makeIfCmd(exp_cond, b, parseElsesRecursive(ps))
-    end
-    syntaxError(ps.tokens[1].Tag)
-end
-]]
-    
 local function parseIfCmd(ps)
     comeParser(ps, "IF")
     local exp_cond = parseExp(ps)
@@ -783,16 +757,6 @@ local function parseWhileCmd(ps)
     comeParser(ps, "END")
     return makeWhileCmd(exp_cond, b)
 end
-
---[[
-local function makeSetVarCmd(nome, exp)
-    return { Tag = "CMDSETVAR", Name = nome, ExpVal = exp }
-end
-
-local function makeSetTblCmd(exp_lhs, exp_i, exp_rhs)
-    return { Tag = "CMDSETTBL", ExpTbl = exp_lhs, ExpIndex = exp_i, ExpVal = exp_rhs }
-end
-]]
 
 local function makePrintCmd(args)
     return { Tag = "CMDPRINT", Args = args }
@@ -915,6 +879,10 @@ local function  makeValString(str)
     return {Tag = "VALSTR", Val = str}
 end
 
+local function makeValNotSet(name)
+    return {Tag = "VALNOTSET", Name = name, --[[ Val = nil ]] }
+end
+
 local function isCondFalse(v)
     return v == nil or v == false
 end
@@ -925,19 +893,61 @@ end
 
 local function evalError(msg)
     print(msg)
-    error(msg,1)
+    error(msg)
 end
 
 local inspect = require("inspect")
-local function evalExp(exp,env)
-    if exp.Tag == "EXPNAME" then return env[exp.Value] end
+
+local evalExp
+
+local function evalTblConst(exptbl, env)
+    local t = {}
+    local unnumbered_field = 1
+    for i = 1, #exptbl.Fields do
+        local f = exptbl.Fields[i]
+        if f.ExpKey then 
+            local key = evalExp(f.ExpKey, env)
+            if key.Val then
+                t[key.Val] = evalExp(f.ExpVal, env)
+            else
+                evalError("Trying to assign nil key to table")
+            end
+        else
+            t[unnumbered_field] = evalExp(f.ExpVal,env)
+            unnumbered_field = unnumbered_field + 1
+        end
+    end
+
+    return makeValTbl(t)
+end
+
+function evalExp(exp, env)
+    if exp.Tag == "EXPNAME" then
+        local v = env[exp.Value]
+        if v then return v end
+        return makeValNotSet(exp.Value)
+    end
     if exp.Tag == "EXPNIL" then return makeValNil() end
     if exp.Tag == "EXPINT" then return makeValInt(exp.Value) end
     if exp.Tag == "EXPBOOL" then return makeValBool(exp.Value) end
     if exp.Tag == "EXPSTR" then return makeValString(exp.Value) end
     
+    if exp.Tag == "EXPTBLCONST" then
+        return evalTblConst(exp, env)
+    end
+
+    if exp.Tag == "EXPTBLINDEX" then 
+        local t = evalExp(exp.Table, env)
+        if t.Tag == "VALTBL" then
+            local index = evalExp(exp.Index)
+            return t.Val[index.Val]
+        else
+            evalError(string.format("trying to index %s object",t.Tag))
+        end
+    end
+    
     if exp.Tag == "EXPUNOP" then
-        local runtime = evalExp(exp.Exp)
+        local runtime = evalExp(exp.Exp, env)
         if exp.Op == "NOT" then
             if isCondTrue(runtime.Val) then return makeValBool(true)
             else return makeValBool(false) end
@@ -952,24 +962,18 @@ local function evalExp(exp,env)
 
     if exp.Tag == "EXPBINOP" then
         if exp.Op == "AND" then
-            local lhs = evalExp(exp.Exp1)
-            if isCondFalse(lhs.Val) then return makeValBool(false)
-            else
-                local rhs = evalExp(exp.Exp2)
-                return makeValBool(isCondTrue(rhs.Val))
-            end
+            local lhs = evalExp(exp.Exp1, env)
+            if isCondFalse(lhs.Val) then return lhs end
+            return evalExp(exp.Exp2, env)
         end
 
         if exp.Op == "OR" then
             local lhs = evalExp(exp.Exp1)
-            if isCondTrue(lhs.Val) then return makeValBool(true)
-            else
-                local rhs = evalExp(exp.Exp2)
-                return makeValBool(isCondTrue(rhs.Val))
-            end
+            if isCondTrue(lhs.Val) then return lhs end
+            return evalExp(exp.Exp2, env)
         end
 
-        local lhs, rhs = evalExp(exp.Exp1), evalExp(exp.Exp2)
+        local lhs, rhs = evalExp(exp.Exp1, env), evalExp(exp.Exp2, env)
 
         if exp.Op == "<" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
@@ -1045,10 +1049,86 @@ local function evalExp(exp,env)
     evalError("Could not evaluate exp", inspect(exp))
 end
 
-local function evalCmd(cmd)
-    evalExp(cmd)
+
+-- only used once, but denests code
+-- will have to come back for when functions return multiple stuff
+local function evalCmdSetList(setlistcmd, env)
+    local values = {}
+    for i = 1, #setlistcmd.ExpValList do
+        table.insert(values,evalExp(setlistcmd.ExpValList[i], env))
+    end
+
+    for i = 1, #setlistcmd.ExpSetList do
+        local set = setlistcmd.ExpSetList[i]
+
+        if set.Tag == "EXPNAME" then
+            env[set.Value] = values[i]
+        elseif set.Tag == "EXPTBLINDEX" then
+            local t = evalExp(set.Table, env)
+            if t.Tag == "VALTBL" then
+                local index = evalExp(set.Index)
+                if index.Val ~= nil then
+                    t.Val[index.Val] = values[i]
+                end
+            else
+                evalError(string.format("attempting to index %s object", t.Tag))
+            end
+        end
+    end
+end
+
+local function evalCmd(cmd, env)
+    if cmd.Tag == "CMDIF" then
+        local cond = evalExp(cmd.ExpCond, env)
+        if isCondTrue(cond.Val) then
+            evalCmd(cmd.Block, env)
+        elseif cmd.Elses then 
+            evalCmd(cmd.Elses, env)
+            end
+        return
+    end
+
+    if cmd.Tag == "CMDWHILE" then
+        local cond = evalExp(cmd.ExpCond, env)
+        while isCondTrue(cond.Val) do
+            evalCmd(cmd.Block, env)
+            cond = evalExp(cmd.ExpCond, env)
+        end
+        return
+    end
+
+    if cmd.Tag == "CMDSETLIST" then
+        evalCmdSetList(cmd,env)
+        return
+    end
+
+    if cmd.Tag == "CMDBLOCK" then
+        for i = 1, #cmd.Cmds do
+            evalCmd(cmd.Cmds[i], env)
+        end
+        return
+    end
+
+    if cmd.Tag == "CMDPRINT" then
+        local args = {}
+        for i = 1, #cmd.Args do
+            args[i] = inspect(evalExp(cmd.Args[i]))
+        end
+        print(table.unpack(args))
+        return
+    end
+
+    evalError(string.format("Couldn't evaluate command %s",cmd.Tag))
 end
 
 local b = parseBloco(PS)
-print(inspect(b))
+-- print(inspect(b))
+
+
+print("EVALUATION")
+local env1 = {}
+evalCmd(b,env1)
+
+print("ENDING ENVIRONMENT")
+print(inspect(env1))
 
