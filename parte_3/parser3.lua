@@ -1,3 +1,4 @@
+---@diagnostic disable: need-check-nil
 -- Disciplina: Compiladores
 -- Professor: Hugo Musso
 -- Aluno: Henrique (122078397)
@@ -295,7 +296,7 @@ local function getToken(ls)
     end
 
     -- NUMBERS
-    if isNumber(ls.chars[1]) then
+    if isNumber(ls.chars[1]) or (ls.chars[1] == '.' and isNumber(ls.chars[2])) then
         return readNumber(ls)
     end
 
@@ -480,6 +481,13 @@ local function makeExpCall(expf, args)
     }
 end
 
+local function makeExpString(str)
+    return { 
+        Tag = "EXPSTR",
+        Value = str
+    }
+end
+
 
 local parseExp
 
@@ -543,6 +551,12 @@ local function parseSimples(ps)
         return makeExpInt(num)
     end
 
+    if ps.tokens[1].Tag == "STRING" then
+        local str = ps.tokens[1].Value
+        advanceParser(ps)
+        return makeExpString(str)
+    end
+
     if ps.tokens[1].Tag == "{" then
         return parseTableConstructor(ps)
     end
@@ -585,7 +599,7 @@ local function parseBinopExp(ps, min_prec)
 end
 
 local function makeExpEOF()
-    return { Tag = "EOFEXP" }
+    return { Tag = "EXPEOF" }
 end
 
 function parseExp(ps)
@@ -646,7 +660,7 @@ function parseSufixada(ps)
             advanceParser(ps)
 
             if ps.tokens[1].Tag == "NAME" then
-                e = makeExpTblIndex(e, makeExpName(ps.tokens[1].Value))
+                e = makeExpTblIndex(e, makeExpString(ps.tokens[1].Value))
             end
             comeParser(ps, "NAME")
         end
@@ -698,23 +712,24 @@ local parseBloco
 
 -- elses_block can be nil
 local function makeIfCmd(exp_cond, block, elses_block)
-    return { Tag = "IFCMD", ExpCond = exp_cond, Block = block, Elses = elses_block }
+    return { Tag = "CMDIF", ExpCond = exp_cond, Block = block, Elses = elses_block }
 end
 
 -- I was thinking of doing this, but someone might be insane enough to do 100000000 elseifs
+--[[
 local function parseElsesRecursive(ps)
     if ps.tokens[1].Tag == "END" then
         advanceParser(ps)
         return nil
     end
-
+    
     if ps.tokens[1].Tag == "ELSE" then
         advanceParser(ps)
         local b = parseBloco(ps)
         comeParser(ps, "END")
         return b
     end
-
+    
     if ps.tokens[1].Tag == "ELSIF" then
         advanceParser(ps)
         local exp_cond = parseExp(ps)
@@ -724,7 +739,8 @@ local function parseElsesRecursive(ps)
     end
     syntaxError(ps.tokens[1].Tag)
 end
-
+]]
+    
 local function parseIfCmd(ps)
     comeParser(ps, "IF")
     local exp_cond = parseExp(ps)
@@ -756,7 +772,7 @@ local function parseIfCmd(ps)
 end
 
 local function makeWhileCmd(exp_cond, while_block)
-    return { Tag = "WHILECMD", ExpCond = exp_cond, Block = while_block }
+    return { Tag = "CMDWHILE", ExpCond = exp_cond, Block = while_block }
 end
 
 local function parseWhileCmd(ps)
@@ -768,6 +784,7 @@ local function parseWhileCmd(ps)
     return makeWhileCmd(exp_cond, b)
 end
 
+--[[
 local function makeSetVarCmd(nome, exp)
     return { Tag = "CMDSETVAR", Name = nome, ExpVal = exp }
 end
@@ -775,6 +792,7 @@ end
 local function makeSetTblCmd(exp_lhs, exp_i, exp_rhs)
     return { Tag = "CMDSETTBL", ExpTbl = exp_lhs, ExpIndex = exp_i, ExpVal = exp_rhs }
 end
+]]
 
 local function makePrintCmd(args)
     return { Tag = "CMDPRINT", Args = args }
@@ -784,38 +802,21 @@ local function makeBlock(cmds)
     return { Tag = "CMDBLOCK", Cmds = cmds }
 end
 
-
--- PERGUNTAR PARA HUGO COMO MELHORAR ISSO
 local CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
 local function cmd_enders(tag)
     return isInTable(tag, CMD_ENDERS)
 end
 
-local function parseSufList(ps)
-    local suf = parseSufixada(ps)
-    local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
-    while ps.tokens[1].Tag == ',' do
-        advanceParser(ps)
-        table.insert(sufs, parseSufixada(ps))
-        sufs.HasCall = (sufs[#sufs].Tag == "EXPCALL")
-    end
-    return parseSufList
-end
-
-
+--[[
 local function parseCmd(ps)
     if ps.tokens[1].Tag == "IF" then
         return parseIfCmd(ps)
     end
-
     if ps.tokens[1].Tag == "WHILE" then
         return parseWhileCmd(ps)
     end
-
     if cmd_enders(ps.tokens[1].Tag) then return nil end
-
     -- exp sufixiada
-
     local suf = parseSufixada(ps)
     if ps.tokens[1].Tag == "=" then
         advanceParser(ps)
@@ -826,23 +827,228 @@ local function parseCmd(ps)
         end
         syntaxError(ps.tokens[1], "trying to set unsettable value")
     end
-
+    
     if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
         return makePrintCmd(suf.Args)
     end
-
+    
     syntaxError(ps.tokens[1])
 end
+]]
+
+local function parseSufList(ps)
+    local suf = parseSufixada(ps)
+    local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
+    while ps.tokens[1].Tag == ',' do
+        advanceParser(ps)
+        table.insert(sufs, parseSufixada(ps))
+        sufs.HasCall = sufs.HasCall or (sufs[#sufs].Tag == "EXPCALL")
+    end
+    return sufs
+end
+
+local function makeSetList(setlist, explist)
+    return {Tag = "CMDSETLIST", ExpSetList = setlist, ExpValList = explist}
+end
+
+-- Same thing but maybe accepts suf lists
+local function parseCmd2(ps)
+    if cmd_enders(ps.tokens[1].Tag) then return nil end
+
+    if ps.tokens[1].Tag == "IF" then
+        return parseIfCmd(ps)
+    end
+    
+    if ps.tokens[1].Tag == "WHILE" then
+        return parseWhileCmd(ps)
+    end
+
+    -- exp sufixiada
+    local sufs= parseSufList(ps)
+    if  ps.tokens[1].Tag == "=" and not sufs.HasCall then
+        advanceParser(ps)
+        local explist = parseGetExplist(ps)
+        return makeSetList(sufs,explist)
+    end
+    
+    if #sufs == 1 then
+        local suf = sufs[1]
+        if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
+            return makePrintCmd(suf.Args)
+        end
+    end
+
+    syntaxError(ps.tokens[1],"could not parse Cmd")
+end
+
 
 function parseBloco(ps)
     local cmds = {}
-    local c = parseCmd(ps)
+    local c = parseCmd2(ps)
     while c do
         table.insert(cmds, c)
-        c = parseCmd(ps)
+        c = parseCmd2(ps)
     end
+    if #cmds == 1 then return cmds[1] end
     return makeBlock(cmds)
 end
 
+
+-- Evaluation
+local function makeValNil()
+    return {Tag = "VALNIL"}
+end
+
+local function makeValInt(n)
+    return {Tag = "VALINT", Val = n}
+end
+
+local function makeValBool(b)
+    return {Tag = "VALBOOL", Val = b}
+end
+
+local function makeValTbl(t)
+    return {Tag = "VALTBL", Val = t}
+end
+
+local function  makeValString(str)
+    return {Tag = "VALSTR", Val = str}
+end
+
+local function isCondFalse(v)
+    return v == nil or v == false
+end
+
+local function isCondTrue(v)
+    return not isCondFalse(v)
+end
+
+local function evalError(msg)
+    print(msg)
+    error(msg,1)
+end
+
 local inspect = require("inspect")
-print(inspect(parseBloco(PS)))
+local function evalExp(exp,env)
+    if exp.Tag == "EXPNAME" then return env[exp.Value] end
+    if exp.Tag == "EXPNIL" then return makeValNil() end
+    if exp.Tag == "EXPINT" then return makeValInt(exp.Value) end
+    if exp.Tag == "EXPBOOL" then return makeValBool(exp.Value) end
+    if exp.Tag == "EXPSTR" then return makeValString(exp.Value) end
+    
+    if exp.Tag == "EXPUNOP" then
+        local runtime = evalExp(exp.Exp)
+        if exp.Op == "NOT" then
+            if isCondTrue(runtime.Val) then return makeValBool(true)
+            else return makeValBool(false) end
+        end
+
+        if exp.Op == "-" then
+            if runtime.Tag == "VALINT" then
+                return makeValInt(-runtime.Val)
+            else evalError(string.format("Tried to do - %s",runtime.Tag)) end
+        end
+    end
+
+    if exp.Tag == "EXPBINOP" then
+        if exp.Op == "AND" then
+            local lhs = evalExp(exp.Exp1)
+            if isCondFalse(lhs.Val) then return makeValBool(false)
+            else
+                local rhs = evalExp(exp.Exp2)
+                return makeValBool(isCondTrue(rhs.Val))
+            end
+        end
+
+        if exp.Op == "OR" then
+            local lhs = evalExp(exp.Exp1)
+            if isCondTrue(lhs.Val) then return makeValBool(true)
+            else
+                local rhs = evalExp(exp.Exp2)
+                return makeValBool(isCondTrue(rhs.Val))
+            end
+        end
+
+        local lhs, rhs = evalExp(exp.Exp1), evalExp(exp.Exp2)
+
+        if exp.Op == "<" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValBool(lhs.Val < rhs.Val)
+            else evalError(string.format("Trying to compare %s < %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == ">" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValBool(lhs.Val > rhs.Val)
+            else evalError(string.format("Trying to compare %s > %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == "<=" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValBool(lhs.Val <= rhs.Val)
+            else evalError(string.format("Trying to compare %s <= %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == ">=" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValBool(lhs.Val >= rhs.Val)
+            else evalError(string.format("Trying to compare %s >= %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == "==" then
+            return makeValBool(lhs.Tag == rhs.Tag and lhs.Val == rhs.Val)
+        end
+
+        if exp.Op == "~=" then
+            return makeValBool(lhs.Tag ~= rhs.Tag or lhs.Val ~= rhs.Val)
+        end
+
+        if exp.Op == "+" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValInt(lhs.Val + rhs.Val)
+            else evalError(string.format("Trying to sum %s + %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == "-" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValInt(lhs.Val - rhs.Val)
+            else evalError(string.format("Trying to sub %s - %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == "*" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValInt(lhs.Val * rhs.Val)
+            else evalError(string.format("Trying to mult %s * %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == "/" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValInt(lhs.Val / rhs.Val)
+            else
+                evalError(string.format("Trying to divide %s / %s", lhs.Tag, rhs.Tag))
+            end
+        end
+
+        if exp.Op == "%" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValInt(lhs.Val % rhs.Val)
+            else evalError(string.format("Trying to mod %s %% %s", lhs.Tag, rhs.Tag)) end
+        end
+
+        if exp.Op == "^" then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
+                return makeValInt(lhs.Val ^ rhs.Val)
+            else evalError(string.format("Trying to exp %s ^ %s", lhs.Tag, rhs.Tag)) end
+        end
+    end
+
+    evalError("Could not evaluate exp", inspect(exp))
+end
+
+local function evalCmd(cmd)
+    evalExp(cmd)
+end
+
+local b = parseBloco(PS)
+print(inspect(b))
+
