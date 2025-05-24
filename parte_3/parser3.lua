@@ -482,7 +482,7 @@ local function makeExpCall(expf, args)
 end
 
 local function makeExpString(str)
-    return { 
+    return {
         Tag = "EXPSTR",
         Value = str
     }
@@ -791,11 +791,11 @@ local function parseCmd(ps)
         end
         syntaxError(ps.tokens[1], "trying to set unsettable value")
     end
-    
+
     if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
         return makePrintCmd(suf.Args)
     end
-    
+
     syntaxError(ps.tokens[1])
 end
 ]]
@@ -812,7 +812,7 @@ local function parseSufList(ps)
 end
 
 local function makeSetList(setlist, explist)
-    return {Tag = "CMDSETLIST", ExpSetList = setlist, ExpValList = explist}
+    return { Tag = "CMDSETLIST", ExpSetList = setlist, ExpValList = explist }
 end
 
 -- Same thing but maybe accepts suf lists
@@ -822,19 +822,19 @@ local function parseCmd2(ps)
     if ps.tokens[1].Tag == "IF" then
         return parseIfCmd(ps)
     end
-    
+
     if ps.tokens[1].Tag == "WHILE" then
         return parseWhileCmd(ps)
     end
 
     -- exp sufixiada
-    local sufs= parseSufList(ps)
-    if  ps.tokens[1].Tag == "=" and not sufs.HasCall then
+    local sufs = parseSufList(ps)
+    if ps.tokens[1].Tag == "=" and not sufs.HasCall then
         advanceParser(ps)
         local explist = parseGetExplist(ps)
-        return makeSetList(sufs,explist)
+        return makeSetList(sufs, explist)
     end
-    
+
     if #sufs == 1 then
         local suf = sufs[1]
         if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
@@ -842,7 +842,7 @@ local function parseCmd2(ps)
         end
     end
 
-    syntaxError(ps.tokens[1],"could not parse Cmd")
+    syntaxError(ps.tokens[1], "could not parse Cmd")
 end
 
 
@@ -857,30 +857,29 @@ function parseBloco(ps)
     return makeBlock(cmds)
 end
 
-
 -- Evaluation
 local function makeValNil()
-    return {Tag = "VALNIL"}
+    return { Tag = "VALNIL" }
 end
 
 local function makeValInt(n)
-    return {Tag = "VALINT", Val = n}
+    return { Tag = "VALINT", Val = n }
 end
 
 local function makeValBool(b)
-    return {Tag = "VALBOOL", Val = b}
+    return { Tag = "VALBOOL", Val = b }
 end
 
 local function makeValTbl(t)
-    return {Tag = "VALTBL", Val = t}
+    return { Tag = "VALTBL", Val = t }
 end
 
-local function  makeValString(str)
-    return {Tag = "VALSTR", Val = str}
+local function makeValString(str)
+    return { Tag = "VALSTR", Val = str }
 end
 
 local function makeValNotSet(name)
-    return {Tag = "VALNOTSET", Name = name, --[[ Val = nil ]] }
+    return { Tag = "VALNOTSET", Name = name, --[[ Val = nil ]] }
 end
 
 local function isCondFalse(v)
@@ -905,7 +904,7 @@ local function evalTblConst(exptbl, env)
     local unnumbered_field = 1
     for i = 1, #exptbl.Fields do
         local f = exptbl.Fields[i]
-        if f.ExpKey then 
+        if f.ExpKey then
             local key = evalExp(f.ExpKey, env)
             if key.Val then
                 t[key.Val] = evalExp(f.ExpVal, env)
@@ -913,7 +912,7 @@ local function evalTblConst(exptbl, env)
                 evalError("Trying to assign nil key to table")
             end
         else
-            t[unnumbered_field] = evalExp(f.ExpVal,env)
+            t[unnumbered_field] = evalExp(f.ExpVal, env)
             unnumbered_field = unnumbered_field + 1
         end
     end
@@ -931,32 +930,37 @@ function evalExp(exp, env)
     if exp.Tag == "EXPINT" then return makeValInt(exp.Value) end
     if exp.Tag == "EXPBOOL" then return makeValBool(exp.Value) end
     if exp.Tag == "EXPSTR" then return makeValString(exp.Value) end
-    
+
     if exp.Tag == "EXPTBLCONST" then
         return evalTblConst(exp, env)
     end
 
-    if exp.Tag == "EXPTBLINDEX" then 
+    if exp.Tag == "EXPTBLINDEX" then
         local t = evalExp(exp.Table, env)
         if t.Tag == "VALTBL" then
             local index = evalExp(exp.Index)
             return t.Val[index.Val]
         else
-            evalError(string.format("trying to index %s object",t.Tag))
+            evalError(string.format("trying to index %s object", t.Tag))
         end
     end
-    
+
     if exp.Tag == "EXPUNOP" then
         local runtime = evalExp(exp.Exp, env)
         if exp.Op == "NOT" then
-            if isCondTrue(runtime.Val) then return makeValBool(true)
-            else return makeValBool(false) end
+            if isCondTrue(runtime.Val) then
+                return makeValBool(true)
+            else
+                return makeValBool(false)
+            end
         end
 
         if exp.Op == "-" then
             if runtime.Tag == "VALINT" then
                 return makeValInt(-runtime.Val)
-            else evalError(string.format("Tried to do - %s",runtime.Tag)) end
+            else
+                evalError(string.format("Tried to do - %s", runtime.Tag))
+            end
         end
     end
 
@@ -978,25 +982,33 @@ function evalExp(exp, env)
         if exp.Op == "<" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValBool(lhs.Val < rhs.Val)
-            else evalError(string.format("Trying to compare %s < %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to compare %s < %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == ">" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValBool(lhs.Val > rhs.Val)
-            else evalError(string.format("Trying to compare %s > %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to compare %s > %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == "<=" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValBool(lhs.Val <= rhs.Val)
-            else evalError(string.format("Trying to compare %s <= %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to compare %s <= %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == ">=" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValBool(lhs.Val >= rhs.Val)
-            else evalError(string.format("Trying to compare %s >= %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to compare %s >= %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == "==" then
@@ -1010,19 +1022,25 @@ function evalExp(exp, env)
         if exp.Op == "+" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValInt(lhs.Val + rhs.Val)
-            else evalError(string.format("Trying to sum %s + %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to sum %s + %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == "-" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValInt(lhs.Val - rhs.Val)
-            else evalError(string.format("Trying to sub %s - %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to sub %s - %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == "*" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValInt(lhs.Val * rhs.Val)
-            else evalError(string.format("Trying to mult %s * %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to mult %s * %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == "/" then
@@ -1036,26 +1054,29 @@ function evalExp(exp, env)
         if exp.Op == "%" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValInt(lhs.Val % rhs.Val)
-            else evalError(string.format("Trying to mod %s %% %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to mod %s %% %s", lhs.Tag, rhs.Tag))
+            end
         end
 
         if exp.Op == "^" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
                 return makeValInt(lhs.Val ^ rhs.Val)
-            else evalError(string.format("Trying to exp %s ^ %s", lhs.Tag, rhs.Tag)) end
+            else
+                evalError(string.format("Trying to exp %s ^ %s", lhs.Tag, rhs.Tag))
+            end
         end
     end
 
     evalError("Could not evaluate exp", inspect(exp))
 end
 
-
 -- only used once, but denests code
 -- will have to come back for when functions return multiple stuff
 local function evalCmdSetList(setlistcmd, env)
     local values = {}
     for i = 1, #setlistcmd.ExpValList do
-        table.insert(values,evalExp(setlistcmd.ExpValList[i], env))
+        table.insert(values, evalExp(setlistcmd.ExpValList[i], env))
     end
 
     for i = 1, #setlistcmd.ExpSetList do
@@ -1082,9 +1103,9 @@ local function evalCmd(cmd, env)
         local cond = evalExp(cmd.ExpCond, env)
         if isCondTrue(cond.Val) then
             evalCmd(cmd.Block, env)
-        elseif cmd.Elses then 
+        elseif cmd.Elses then
             evalCmd(cmd.Elses, env)
-            end
+        end
         return
     end
 
@@ -1098,7 +1119,7 @@ local function evalCmd(cmd, env)
     end
 
     if cmd.Tag == "CMDSETLIST" then
-        evalCmdSetList(cmd,env)
+        evalCmdSetList(cmd, env)
         return
     end
 
@@ -1118,7 +1139,7 @@ local function evalCmd(cmd, env)
         return
     end
 
-    evalError(string.format("Couldn't evaluate command %s",cmd.Tag))
+    evalError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
 
 local b = parseBloco(PS)
@@ -1127,8 +1148,7 @@ local b = parseBloco(PS)
 
 print("EVALUATION")
 local env1 = {}
-evalCmd(b,env1)
+evalCmd(b, env1)
 
 print("ENDING ENVIRONMENT")
 print(inspect(env1))
-
