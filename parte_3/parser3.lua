@@ -1133,7 +1133,7 @@ local function evalCmd(cmd, env)
     if cmd.Tag == "CMDPRINT" then
         local args = {}
         for i = 1, #cmd.Args do
-            args[i] = inspect(evalExp(cmd.Args[i]))
+            args[i] = inspect(evalExp(cmd.Args[i],env))
         end
         print(table.unpack(args))
         return
