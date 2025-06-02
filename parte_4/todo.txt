@@ -1,0 +1,88 @@
+IMPLEMENTAÇÃO DE LOCAL
+======================
+
+cmdLocal = { Tag CMDLOCAL, CMDSETLOCAL, CMDBLOCK_UPDATED ENV} 
+-- o no cmd local agora tem uma parte do update e uma parte do bloco que deve 
+-- ser rodado com o novo env
+
+parseCmd:
+if local :
+  return cmdlocal_e_bloco = parse cmd local -- RETORNA UM CMDLOCAL (QUE TEM UM BLOCO TBM)
+  
+evalcmd
+  if local
+    novo_env = update_env -- com o setting de variaveis locais
+
+
+IMPLEMENTACAO DE RETORNO
+========================
+
+evalCmd retorna um sinal se algum filho retornou e os valores de retorno.
+
+OS VALORES DE RETORNO SÓ SÃO USADOS EM EVAL EXPLUAFUNC 
+
+ESCREVER UMA FUNCAO GETFIRSTVAL
+
+getfirstval de uma lista de retorno, retorna o primeiro objeto da lista
+getfirstval de uma variavel pura retorna ela mesmo
+
+
+em eval exp
+local lhs = getfistval(evalExp(Exp.1, env))
+ou fazer um evalone que faz getfistval(evalExp(exp,env)
+
+IMPLEMENTAÇÃO DE FUNCOES EXTERNAS
+=================================
+Atualizar valores de libfunctions lua
+Agora elas devem ter atribuidas a elas 
+- qtd de parametros (dane-se que seja multivariado)
+- Tipo do valor de retorno (math.sqrt retorna VALINT) (print retorna VALNIL)
+
+Construir bonitinho uma tabela
+
+
+tipo Globals = {
+    math = makeValTbl(
+        {
+          sqrt = makeFuncLib(math.sqrt,1,VALINT), 
+          floor = makeFuncLib(math.floor,1,VALINT)
+        }
+      ),
+    io = makeValTbl(
+        {
+          read = makeFuncLib(io.read,1, ????)
+        }
+    )
+}
+
+
+ORGANIZAR O CÓDIGO (TALVEZ ISSO PRIMEIRO)
+====================
+
+== LEXER
+Separar o Lexer,
+- ja ta bem separado
+
+== PARSER 
+Separa o parser,
+
+funcoes auxiliares (parseGetListaExp, GetListaName, sla qlqr coisa)
+
+Separar funcões makeEXP/makeCMD (todas juntas),
+
+Funcoes de parser, parserexp, parser cmds
+ 
+
+== EVALUATION
+makeVals
+Parte dos environments
+Tá bem separado, mas deixar lá em baixo
+
+
+TER LONGAS SEÇÕES DE COMENTARIO ANTES DE CADA SEÇÃO PARA SER FÁCIL DE IDENTIFICAR
+
+
+
+
+
+
