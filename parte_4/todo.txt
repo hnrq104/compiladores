@@ -75,6 +75,7 @@ Funcoes de parser, parserexp, parser cmds
 
 == EVALUATION
 makeVals
+Parte dos environments
 Tá bem separado, mas deixar lá em baixo
 
 
