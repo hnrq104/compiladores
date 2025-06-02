@@ -487,7 +487,6 @@ local function makeExpString(str)
     }
 end
 
-
 local parseExp
 
 local function parsePrimaria(ps)
@@ -525,8 +524,53 @@ end
 -- isso é de certa forma associatiov a esquerda com ()
 
 local parseSufixada -- refiz abaixo para o trab 3
+-- e refazer novamente para o trabalho 4.
 
-local parseTableConstructor
+local parseTableConstructor -- trabalho 3
+
+-- Trabalho 4
+-- implementação de funcoes
+
+local function makeExpLuaFunc(params, body)
+    return { Tag = "EXPLUAFUNC", Param = params, CmdBody = body }
+end
+
+local function readParamList(ps)
+    local params = {}
+    if ps.tokens[1].Tag == "NAME" then
+        params[#params + 1] = ps.tokens[1].Value
+    end
+    advanceParser(ps)
+
+    while ps.tokens[1].Tag == "," do
+        advanceParser(ps)
+        if ps.tokens[1].Tag == "NAME" then
+            params[#params + 1] = ps.tokens[1].Value
+            advanceParser(ps)
+        else
+            syntaxError(ps.tokens[1], "unexpected token in name list")
+        end
+    end
+    return params
+end
+
+local parseBloco
+
+local function parseLuaFunc(ps)
+    comeParser(ps, "FUNCTION")
+    comeParser(ps, "(")
+
+    local params = {} -- inneficient but easier to implement
+    if ps.tokens[1].Tag ~= ")" then
+        params = readParamList(ps)
+    end
+    comeParser(ps, ")")
+
+    local body = parseBloco(ps)
+    comeParser(ps, "END")
+
+    return makeExpLuaFunc(params, body)
+end
 
 local function parseSimples(ps)
     if ps.tokens[1].Tag == "NIL" then
@@ -550,6 +594,8 @@ local function parseSimples(ps)
         return makeExpInt(num)
     end
 
+    -- Trabalho 3
+
     if ps.tokens[1].Tag == "STRING" then
         local str = ps.tokens[1].Value
         advanceParser(ps)
@@ -558,6 +604,12 @@ local function parseSimples(ps)
 
     if ps.tokens[1].Tag == "{" then
         return parseTableConstructor(ps)
+    end
+
+    -- Trabalho 4
+
+    if ps.tokens[1].Tag == "FUNCTION" then
+        return parseLuaFunc(ps)
     end
 
     return parseSufixada(ps)
@@ -630,12 +682,12 @@ end
 local function makeExpTblIndex(expTbl, expKey)
     return { Tag = "EXPTBLINDEX", Table = expTbl, Index = expKey }
 end
+--
 
 local function isSuffix(tag)
     return tag == "." or tag == "(" or tag == "["
 end
 
----
 function parseSufixada(ps)
     local e = parsePrimaria(ps)
 
@@ -707,8 +759,6 @@ function parseTableConstructor(ps)
     return makeExpTblConstructor(fields)
 end
 
-local parseBloco
-
 -- elses_block can be nil
 local function makeIfCmd(exp_cond, block, elses_block)
     return { Tag = "CMDIF", ExpCond = exp_cond, Block = block, Elses = elses_block }
@@ -770,35 +820,6 @@ local function cmd_enders(tag)
     return isInTable(tag, CMD_ENDERS)
 end
 
---[[
-local function parseCmd(ps)
-    if ps.tokens[1].Tag == "IF" then
-        return parseIfCmd(ps)
-    end
-    if ps.tokens[1].Tag == "WHILE" then
-        return parseWhileCmd(ps)
-    end
-    if cmd_enders(ps.tokens[1].Tag) then return nil end
-    -- exp sufixiada
-    local suf = parseSufixada(ps)
-    if ps.tokens[1].Tag == "=" then
-        advanceParser(ps)
-        if suf.Tag == "EXPNAME" then
-            return makeSetVarCmd(suf.Value, parseExp(ps))
-        elseif suf.Tag == "EXPTBLINDEX" then
-            return makeSetTblCmd(suf.Table, suf.Index, parseExp(ps))
-        end
-        syntaxError(ps.tokens[1], "trying to set unsettable value")
-    end
-
-    if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
-        return makePrintCmd(suf.Args)
-    end
-
-    syntaxError(ps.tokens[1])
-end
-]]
-
 local function parseSufList(ps)
     local suf = parseSufixada(ps)
     local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
@@ -814,6 +835,86 @@ local function makeSetList(setlist, explist)
     return { Tag = "CMDSETLIST", ExpSetList = setlist, ExpValList = explist }
 end
 
+--trab 4
+local function makeReturnCmd(explist)
+    return { Tag = "CMDRETURN", ExpRetList = explist }
+end
+
+local function parseReturnCmd(ps)
+    comeParser(ps, "RETURN")
+    local explist
+    if ps.tokens[1].Tag ~= "END" then
+        explist = parseGetExplist(ps)
+    end
+
+    if ps.tokens[1].Tag == "END" or ps.tokens[1].Tag == "EOF" then
+        return makeReturnCmd(explist)
+    end
+
+    syntaxError(ps.tokens[1], "expected end or eof after return")
+end
+
+local function makeLocalSetList(names, exp_values)
+    return { Tag = "CMDLOCALSET", Names = names, ExpValList = exp_values }
+end
+
+local function parseFunctionDeclaration(ps, locality)
+    locality = locality or false -- assume declaration is on global scope
+
+    comeParser(ps, "FUNCTION")
+    local name
+    if ps.tokens[1].Tag == "NAME" then
+        name = ps.tokens[1].Value
+        advanceParser(ps)
+    else
+        syntaxError(ps.tokens[1].Tag, "name expected for function")
+    end
+
+    local params = {}
+    comeParser(ps, "(")
+    if ps.tokens[1].Tag ~= ")" then
+        params = readParamList(ps)
+    end
+    comeParser(ps, ")")
+
+    local body = parseBloco(ps)
+    comeParser(ps, "END")
+
+    if locality then
+        -- é esquisito fazer assim, mas como local set lists só aceitam nomes, vou separa ambas
+        return makeLocalSetList({ name }, { makeExpLuaFunc(params, body) })
+    end
+    return makeSetList({ makeExpName(name) }, { makeExpLuaFunc(params, body) })
+end
+
+
+-- pode retornar um bloco de atribuicoes locais
+-- ou somente declaracoes (atribuicoes nil)
+-- ou uma funcao local
+local function parseLocalCmd(ps)
+    comeParser(ps, "LOCAL")
+
+    -- local function name ( params ) block end
+    if ps.tokens[1].Tag == "FUNCTION" then
+        return parseFunctionDeclaration(ps, true)
+    end
+
+    -- to read names is just to read paramaters :)
+    local names = readParamList(ps)
+
+    local explist = {}
+    if ps.tokens[1].Tag == "=" then
+        advanceParser(ps)
+        explist = parseGetExplist(ps)
+    end
+
+    return makeLocalSetList(names, explist)
+end
+
+local function makeCallCmd(expF, expArgList)
+    return { Tag = "CMDCALL", F = expF, Args = expArgList }
+end
+
 -- Same thing but maybe accepts suf lists
 local function parseCmd2(ps)
     if cmd_enders(ps.tokens[1].Tag) then return nil end
@@ -826,6 +927,21 @@ local function parseCmd2(ps)
         return parseWhileCmd(ps)
     end
 
+    --trabalho 4
+    if ps.tokens[1].Tag == "RETURN" then
+        return parseReturnCmd(ps)
+    end
+
+    if ps.tokens[1].Tag == "FUNCTION" then
+        return parseFunctionDeclaration(ps)
+    end
+
+    if ps.tokens[1].Tag == "LOCAL" then
+        -- ou se trata de uma local function,
+        -- ou uma atribuicao local
+        return parseLocalCmd(ps)
+    end
+
     -- exp sufixiada
     local sufs = parseSufList(ps)
     if ps.tokens[1].Tag == "=" and not sufs.HasCall then
@@ -836,8 +952,8 @@ local function parseCmd2(ps)
 
     if #sufs == 1 then
         local suf = sufs[1]
-        if suf.Tag == "EXPCALL" and suf.F.Tag == "EXPNAME" and suf.F.Value == "print" then
-            return makePrintCmd(suf.Args)
+        if suf.Tag == "EXPCALL" then
+            return makeCallCmd(suf.F, suf.Args)
         end
     end
 
@@ -881,6 +997,20 @@ local function makeValNotSet(name)
     return { Tag = "VALNOTSET", Name = name, --[[ Val = nil ]] }
 end
 
+-- Trabalho 4
+local function makeValLuaFunc(env, params, body)
+    return { Tag = "VALLUAFUNC", Params = params, Body = body, Env = env }
+end
+
+local function makeValLibFunc(func)
+    return { Tag = "VALLIBFUNC", Func = func }
+end
+
+local function makeValReturnList(valList)
+    return { Tag = "VALLISTRET", Values = valList}
+end
+--
+
 local function isCondFalse(v)
     return v == nil or v == false
 end
@@ -894,7 +1024,60 @@ local function evalError(msg)
     error(msg)
 end
 
-local inspect = require("inspect")
+-- TRAB 4 LIDAR COM O AMBIENTE
+
+-- Cria ambiente base
+local function makeBaseEnv()
+    return {
+        Tag = "BASENODE",
+        Globals = {
+            ["print"] = makeValLibFunc(print),
+            -- for now only print
+            -- to add modules do something like
+            -- ["io"] = makeTable({["read"] =  makeValLibFunc(io.read)})
+        }
+    }
+end
+
+-- cria um nó de variavel para lista de ambientes
+local function makeLocalEnvNode(varname, varvalue, up_env)
+    return { Tag = "LOCALNODE", VarName = varname, VarValue = varvalue, UpEnv = up_env }
+end
+
+-- Recupera valor de nome de variavel na lista de ambientes
+local function getVarValue(varname, env)
+    if env.Tag == "BASENODE" then
+        if env.Globals[varname] then
+            return env.Globals[varname]
+        end
+        -- return makeValNotSet(varname)
+        return makeValNil()
+    end
+
+    -- else is a local node
+    if env.VarName == varname then
+        return env.VarValue
+    end
+
+    -- else
+    return getVarValue(varname, env.UpEnv)
+end
+
+local function updateVarValue(varname, newValue, env)
+    if env.Tag == "BASENODE" then
+        env.Globals[varname] = newValue
+        return
+    end
+
+    -- else is a local node
+    if env.VarName == varname then
+        env.VarValue = newValue
+        return
+    end
+
+    -- else
+    updateVarValue(varname, newValue, env.UpEnv)
+end
 
 local evalExp
 
@@ -922,18 +1105,22 @@ end
 local function evalTblIndex(exptbl_ind, env)
     local t = evalExp(exptbl_ind.Table, env)
     if t.Tag == "VALTBL" then
-        local index = evalExp(exptbl_ind.Index)
+        local index = evalExp(exptbl_ind.Index, env)
         if t.Val[index.Val] then return t.Val[index.Val] end
         return makeValNil()
     end
     evalError(string.format("trying to index %s object", t.Tag))
 end
 
+
+local inspect = require("inspect")
+
+
+local evalCmdCall
+
 function evalExp(exp, env)
     if exp.Tag == "EXPNAME" then
-        local v = env[exp.Value]
-        if v then return v end
-        return makeValNotSet(exp.Value)
+        return getVarValue(exp.Value, env)
     end
     if exp.Tag == "EXPNIL" then return makeValNil() end
     if exp.Tag == "EXPINT" then return makeValInt(exp.Value) end
@@ -946,6 +1133,15 @@ function evalExp(exp, env)
 
     if exp.Tag == "EXPTBLINDEX" then
         return evalTblIndex(exp, env)
+    end
+
+    -- Trabalho 4
+    if exp.Tag == "EXPLUAFUNC" then
+        return makeValLuaFunc(env, exp.Params, exp.CmdBody)
+    end
+
+    if exp.Tag == "EXPCALL" then
+        return evalCmdCall(makeCallCmd(exp.F, exp.Args), env)
     end
 
     if exp.Tag == "EXPUNOP" then
@@ -1086,11 +1282,11 @@ local function evalCmdSetList(setlistcmd, env)
         local set = setlistcmd.ExpSetList[i]
 
         if set.Tag == "EXPNAME" then
-            env[set.Value] = values[i]
+            updateVarValue(set.Value, values[i], env)
         elseif set.Tag == "EXPTBLINDEX" then
             local t = evalExp(set.Table, env)
             if t.Tag == "VALTBL" then
-                local index = evalExp(set.Index)
+                local index = evalExp(set.Index, env)
                 if index.Val ~= nil then
                     t.Val[index.Val] = values[i]
                 end
@@ -1101,7 +1297,38 @@ local function evalCmdSetList(setlistcmd, env)
     end
 end
 
-local function evalCmd(cmd, env)
+-- Trabalho 4
+local evalCmd
+
+function evalCmdCall(cmd, env)
+    local fval = evalExp(cmd.F, env)
+
+    if fval.Tag == "VALLIBFUNC" then
+        local args = {}
+        for i = 1, #cmd.Args do
+            args[#args + 1] = evalExp(cmd.Args[i], env).Val
+        end
+        fval.F(table.unpack(args))
+        return makeValNil()
+    end
+
+    if fval.Tag == "VALLUAFUNC" then
+        local newenv = fval.Env
+        for i = 1, #fval.Params do
+            if i <= #cmd.Args then
+                newenv = makeLocalEnvNode(fval.Params[i], evalExp(cmd.Args[i]), newenv)
+            else
+                newenv = makeLocalEnvNode(fval.Params[i], makeValNil(), newenv)
+            end
+        end
+
+        return evalCmd(fval.Body, newenv)
+    end
+
+    evalError("Trying to call non function")
+end
+
+function evalCmd(cmd, env)
     if cmd.Tag == "CMDIF" then
         local cond = evalExp(cmd.ExpCond, env)
         if isCondTrue(cond.Val) then
@@ -1133,12 +1360,8 @@ local function evalCmd(cmd, env)
         return
     end
 
-    if cmd.Tag == "CMDPRINT" then
-        local args = {}
-        for i = 1, #cmd.Args do
-            args[i] = inspect(evalExp(cmd.Args[i], env))
-        end
-        print(table.unpack(args))
+    if cmd.Tag == "CMDCALL" then
+        evalCmdCall(cmd, env)
         return
     end
 
@@ -1146,12 +1369,11 @@ local function evalCmd(cmd, env)
 end
 
 local b = parseBloco(PS)
--- print(inspect(b))
+print(inspect(b))
 
-
-print("EVALUATION")
-local env1 = {}
+-- print("EVALUATION")
+local env1 = makeBaseEnv()
 evalCmd(b, env1)
 
-print("ENDING ENVIRONMENT")
-print(inspect(env1))
+-- print("ENDING ENVIRONMENT")
+-- print(inspect(env1))
