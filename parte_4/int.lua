@@ -569,7 +569,7 @@ local function makeExpTblIndex(expTbl, expKey)
 end
 
 local function makeExpLuaFunc(params, body)
-    return { Tag = "EXPLUAFUNC", Param = params, CmdBody = body }
+    return { Tag = "EXPLUAFUNC", Params = params, CmdBody = body }
 end
 
 
@@ -1459,15 +1459,16 @@ end
 -- only used once, but denests code
 -- will have to come back for when functions return multiple stuff
 
---- CONSERTAR ISSO DEPOIS
-local function evalCmdSetList(setlistcmd, env)
-    
+--- EVALSETLIST E A FUNCAO DE AVALIAR LISTAS
+-- recebe uma lista de expressoes para avaliar, se a ultima for uma valretlist, preenche o final da lista
+-- com os valores retornados
+local function evalList(lista, env)
     local values = {}
-    for i = 1, #setlistcmd.ExpValList do
-        if i < #setlistcmd.ExpValList then
-            values[#values+1] = evalFirst(setlistcmd.ExpValList[i])
+    for i = 1, #lista do
+        if i < #lista then
+            values[#values+1] = evalFirst(lista[i], env)
         else -- o ultimo pode ser retorno multiplo de funcao
-            local val = evalExp(setlistcmd.ExpValList[i], env)
+            local val = evalExp(lista[i], env)
             if val.Tag == "VALLISTRET" then
                 for j = 1, #val.Values do
                     values[#values+1] = val.Values[j]
@@ -1477,7 +1478,16 @@ local function evalCmdSetList(setlistcmd, env)
             end
         end
     end
-    
+    return values
+end
+
+
+
+--- CONSERTAR ISSO DEPOIS
+local function evalCmdSetList(setlistcmd, env)
+
+    local values = evalList(setlistcmd.ExpValList, env)
+ 
     local indexList = {}
     local n_index = 1
 
@@ -1514,24 +1524,23 @@ end
 
 function evalCmdCall(cmd, env)
     local fval = evalExp(cmd.F, env)
+    local args = evalList(cmd.Args, env)
 
     if fval.Tag == "VALLIBFUNC" then
-        local args = {}
-        for i = 1, #cmd.Args do
-            args[#args + 1] = evalExp(cmd.Args[i], env).Val
+        local newargs = {}
+        for i = 1, #args do
+            newargs[#newargs + 1] = args[i].Val
         end
-        fval.F(table.unpack(args))
+        fval.F(table.unpack(newargs))
         return makeValNil() --- REVER DEPOIS
     end
 
     if fval.Tag == "VALLUAFUNC" then
         local newenv = fval.Env
         for i = 1, #fval.Params do
-            if i <= #cmd.Args then
-                newenv = makeLocalEnvNode(fval.Params[i], evalExp(cmd.Args[i], env), newenv)
-            else
-                newenv = makeLocalEnvNode(fval.Params[i], makeValNil(), newenv)
-            end
+            local val = args[i] or makeValNil()
+
+            newenv = makeLocalEnvNode(fval.Params[i], val, newenv)
         end
 
         return evalCmd(fval.Body, newenv)
@@ -1541,13 +1550,14 @@ function evalCmdCall(cmd, env)
 end
 
 local function evalCmdReturn(cmd,env)
-    local retlist = {}
-    for i = 1, #cmd.ExpRetList do
-        retlist[#retlist+1] = evalExp(cmd.ExpRetList[i], env)
-    end
+    local retlist = evalList(cmd.ExpRetList, env)
 
     if #retlist == 0 then
         return makeValNil()
+    end
+
+    if #retlist == 1 then
+        return retlist[1]
     end
 
     return makeValReturnList(retlist)
@@ -1555,27 +1565,13 @@ end
 
 
 local function evalLocalSet(cmd, env)
-    local values = {}
-    for i = 1, #cmd.ExpValList do
-        if i < #cmd.ExpValList then
-            values[#values+1] = evalFirst(cmd.ExpValList[i])
-        else -- o ultimo pode ser retorno multiplo de funcao
-            local val = evalExp(cmd.ExpValList[i], env)
-            if val.Tag == "VALLISTRET" then
-                for j = 1, #val.Values do
-                    values[#values+1] = val.Values[j]
-                end
-            else
-                values[#values+1] = val
-            end
-        end
-    end
-
+    local values = evalList(cmd.ExpValList, env)
+    
     --- atribuicao em novos envs
     local newenv = env
     for i = 1, #cmd.Names do
         local val = values[i] or makeValNil()
-        newenv = makeLocalEnvNode(cmd.Names[i], val, env)
+        newenv = makeLocalEnvNode(cmd.Names[i], val, newenv)
     end
 
     return evalCmd(cmd.Block,newenv)
@@ -1608,6 +1604,7 @@ function evalCmd(cmd, env)
         elseif cmd.Elses then
             return evalCmd(cmd.Elses, env)
         end
+        return
     end
 
     if cmd.Tag == "CMDWHILE" then
@@ -1638,7 +1635,7 @@ print(inspect(b))
 
 print("EVALUATION")
 local env1 = makeBaseEnv()
-print(inspect(env1))
+-- print(inspect(env1))
 evalCmd(b, env1)
 
 -- print("ENDING ENVIRONMENT")
