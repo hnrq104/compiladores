@@ -1150,6 +1150,12 @@ end
 local function makeValReturnList(valList)
     return { Tag = "VALLISTRET", Values = valList }
 end
+
+
+--- maybe fazer isso aq
+local function makeValLibRet(anything)
+    return {Tag = "LIBRET", Value = anything}
+end
 --
 
 
