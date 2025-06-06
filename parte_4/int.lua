@@ -1022,7 +1022,7 @@ local function parseLocalCmd(ps)
         local fname = setlist.ExpSetList[1].Value
         local b = parseBloco(ps)
 
-        return makeLocalSetList({fname}, setlist.ExpValList, b)
+        return makeLocalSetList({ fname }, setlist.ExpValList, b)
     end
 
     -- to read names is just to read paramaters :)
@@ -1097,22 +1097,6 @@ function parseBloco(ps)
     return makeBlock(cmds)
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 -- Evaluation
 local function makeValNil()
     return { Tag = "VALNIL" }
@@ -1148,15 +1132,12 @@ local function makeValLibFunc(func)
 end
 
 local function makeValReturnList(valList)
+    if #valList == 0 then return makeValNil() end
+    if #valList == 1 then return valList[1] end
     return { Tag = "VALLISTRET", Values = valList }
 end
 
 
---- maybe fazer isso aq
-local function makeValLibRet(anything)
-    return {Tag = "LIBRET", Value = anything}
-end
---
 
 
 
@@ -1197,6 +1178,21 @@ end
 
 --- FUNCOES DE AMBIENTE
 
+-- Cria ambiente base
+local function makeBaseEnv(globals)
+    return {
+        Tag = "BASENODE",
+        Globals = globals
+
+        --[[ {
+            ["print"] = makeValLibFunc(print),
+            -- for now only print
+            -- to add modules do something like
+            -- ["io"] = makeTable({["read"] =  makeValLibFunc(io.read)})
+        } ]]
+    }
+end
+
 -- cria um nó de variavel para lista de ambientes
 local function makeLocalEnvNode(varname, varvalue, up_env)
     return { Tag = "LOCALNODE", VarName = varname, VarValue = varvalue, UpEnv = up_env }
@@ -1236,24 +1232,6 @@ local function updateVarValue(varname, newValue, env)
     -- else
     updateVarValue(varname, newValue, env.UpEnv)
 end
-
-
-
-
--- Cria ambiente base
-local function makeBaseEnv()
-    return {
-        Tag = "BASENODE",
-        Globals = {
-            ["print"] = makeValLibFunc(print),
-            -- for now only print
-            -- to add modules do something like
-            -- ["io"] = makeTable({["read"] =  makeValLibFunc(io.read)})
-        }
-    }
-end
-
-
 
 
 
@@ -1472,15 +1450,15 @@ local function evalList(lista, env)
     local values = {}
     for i = 1, #lista do
         if i < #lista then
-            values[#values+1] = evalFirst(lista[i], env)
+            values[#values + 1] = evalFirst(lista[i], env)
         else -- o ultimo pode ser retorno multiplo de funcao
             local val = evalExp(lista[i], env)
             if val.Tag == "VALLISTRET" then
                 for j = 1, #val.Values do
-                    values[#values+1] = val.Values[j]
+                    values[#values + 1] = val.Values[j]
                 end
             else
-                values[#values+1] = val
+                values[#values + 1] = val
             end
         end
     end
@@ -1491,16 +1469,15 @@ end
 
 --- CONSERTAR ISSO DEPOIS
 local function evalCmdSetList(setlistcmd, env)
-
     local values = evalList(setlistcmd.ExpValList, env)
- 
+
     local indexList = {}
     local n_index = 1
 
     for i = 1, #setlistcmd.ExpSetList do
         local set = setlistcmd.ExpSetList[i]
         if set.Tag == "EXPTBLINDEX" then
-            indexList[#indexList+1] = evalFirst(set.Index, env)
+            indexList[#indexList + 1] = evalFirst(set.Index, env)
         end
     end
 
@@ -1512,7 +1489,7 @@ local function evalCmdSetList(setlistcmd, env)
             updateVarValue(set.Value, val, env)
         elseif set.Tag == "EXPTBLINDEX" then
             local t = evalFirst(set.Table, env)
-            if t.Tag == "VALTBL" then 
+            if t.Tag == "VALTBL" then
                 local index = indexList[n_index]
                 n_index = n_index + 1
                 if index.Val ~= nil then
@@ -1533,12 +1510,7 @@ function evalCmdCall(cmd, env)
     local args = evalList(cmd.Args, env)
 
     if fval.Tag == "VALLIBFUNC" then
-        local newargs = {}
-        for i = 1, #args do
-            newargs[#newargs + 1] = args[i].Val
-        end
-        fval.F(table.unpack(newargs))
-        return makeValNil() --- REVER DEPOIS
+        return fval.F(args) -- Para implementar varargs, sempre vou enviar uma lista de valores
     end
 
     if fval.Tag == "VALLUAFUNC" then
@@ -1555,24 +1527,15 @@ function evalCmdCall(cmd, env)
     evalError("Trying to call non function")
 end
 
-local function evalCmdReturn(cmd,env)
+local function evalCmdReturn(cmd, env)
     local retlist = evalList(cmd.ExpRetList, env)
-
-    if #retlist == 0 then
-        return makeValNil()
-    end
-
-    if #retlist == 1 then
-        return retlist[1]
-    end
-
     return makeValReturnList(retlist)
 end
 
 
 local function evalLocalSet(cmd, env)
     local values = evalList(cmd.ExpValList, env)
-    
+
     --- atribuicao em novos envs
     local newenv = env
     for i = 1, #cmd.Names do
@@ -1580,27 +1543,27 @@ local function evalLocalSet(cmd, env)
         newenv = makeLocalEnvNode(cmd.Names[i], val, newenv)
     end
 
-    return evalCmd(cmd.Block,newenv)
+    return evalCmd(cmd.Block, newenv)
 end
 
 
 function evalCmd(cmd, env)
     if cmd.Tag == "CMDRETURN" then
-        return evalCmdReturn(cmd,env)
+        return evalCmdReturn(cmd, env)
     end
 
     if cmd.Tag == "CMDSETLIST" then
         evalCmdSetList(cmd, env)
         return
     end
-    
+
     if cmd.Tag == "CMDCALL" then
         evalCmdCall(cmd, env)
         return
     end
 
     if cmd.Tag == "CMDLOCALSET" then
-        return evalLocalSet(cmd,env)
+        return evalLocalSet(cmd, env)
     end
 
     if cmd.Tag == "CMDIF" then
@@ -1636,11 +1599,115 @@ function evalCmd(cmd, env)
     evalError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
 
+-- AMBIENTE BASE
+-- Cria ambiente base com minha versão de funcoes da lib padrao
+
+-- funcoes que tratam erros
+local function unbox(runtimeval, tipo)
+    if runtimeval.Tag ~= tipo then
+        evalError("funcao esperava :" .. tipo .. " recebeu :" .. runtimeval.Tag)
+    end
+
+    return runtimeval.Val
+end
+
+local function argsize(args, atleast, fname)
+    if #args >= atleast then
+        return true
+    end
+
+    error("function " .. fname .. " expected " .. tostring(atleast) .. " arguments")
+end
+
+--Separei global env aqui para facilitar modifica-lo
+local GlobalEnv = {
+    ["print"] = makeValLibFunc(
+        function(args)
+            for i = 1, #args do
+                print(args[i].Val)
+            end
+            return makeValNil()
+        end
+    ),
+
+    ["tostring"] = makeValLibFunc( -- isso é levemente ineficiente pois pode dar tostring("em uma string")
+        function(args)
+            argsize(args, 1, "tostring")
+            if args[1].Tag == "VALTBL" then
+                return makeValString(tostring(args[1]))
+            elseif args[1].Tag == "VALLUAFUNC" or args[1].Tag == "VALLIBFUNC" then
+                return makeValString("function in " .. tostring(args[1]))
+            end
+
+            return makeValString(tostring(args[1].Val))
+        end
+    ),
+
+    ["error"] = makeValLibFunc(
+        function(args)
+            if #args >= 1 then
+                error(tostring(args[1]))
+            end
+            error()
+            return makeValNil()
+        end
+    ),
+
+    ["io"] = makeValTbl({ -- tabela IO
+        ["write"] = makeValLibFunc(
+            function(args)
+                if #args > 0 then
+                    io.write(tostring(args[1]))
+                end
+                return makeValNil() -- geralmente retorna o ponteiro para a file, nao aqui
+            end
+        ),
+
+        ["read"] = makeValLibFunc(
+            function(nchars)
+                local c
+                local n = 1
+                if #nchars > 1 then
+                    n = unbox(nchars[1], "VALINT")
+                end
+                c = io.read(n)
+                if c == nil then
+                    return makeValNil()
+                end
+                return makeValString(c)
+            end
+        )
+    }),
+
+
+    ["table"] = makeValTbl(
+        {
+            ["unpack"] = makeValLibFunc(
+                function(list_tbl)
+                    if #list_tbl < 1 or list_tbl[1].Tag ~= "VALTBL" then
+                        evalError("unpack precisa de um argumento tabela")
+                    end
+                    local unpk = {}
+                    for i = 1, #list_tbl[1].Val do
+                        unpk[#unpk + 1] = list_tbl[1].Val[i]
+                    end
+                    return makeValReturnList(unpk)
+                end
+            )
+        }
+    )
+
+}
+
+
+
+
+-- EXECUCAO
 local b = parseBloco(PS)
-print(inspect(b))
+-- print(inspect(b))
 
 print("EVALUATION")
-local env1 = makeBaseEnv()
+local env1 = makeBaseEnv(GlobalEnv)
 -- print(inspect(env1))
 evalCmd(b, env1)
 
