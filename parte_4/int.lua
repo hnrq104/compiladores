@@ -390,6 +390,7 @@ local parserBinaryPrecedence = {
     ["/"] = 30,
     ["%"] = 30,
 
+    [".."] = 20
     -- ["^"] = 40
 }
 
@@ -1435,6 +1436,15 @@ function evalExp(exp, env)
                 evalError(string.format("Trying to exp %s ^ %s", lhs.Tag, rhs.Tag))
             end
         end
+
+        if exp.Op == ".." then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALSTR" then
+                return makeValString(lhs.Val .. rhs.Val)
+            else
+                evalError(string.format("Trying to do %s '..' %s", lhs.Tag, rhs.Tag))
+            end
+        end
+        
     end
 
     evalError("Could not evaluate exp", inspect(exp))
@@ -1646,7 +1656,7 @@ local GlobalEnv = {
     ["error"] = makeValLibFunc(
         function(args)
             if #args >= 1 then
-                error(tostring(args[1]))
+                error(tostring(args[1].Val))
             end
             error()
             return makeValNil()
@@ -1657,7 +1667,7 @@ local GlobalEnv = {
         ["write"] = makeValLibFunc(
             function(args)
                 if #args > 0 then
-                    io.write(tostring(args[1]))
+                    io.write(tostring(args[1].Val))
                 end
                 return makeValNil() -- geralmente retorna o ponteiro para a file, nao aqui
             end
@@ -1695,8 +1705,45 @@ local GlobalEnv = {
                 end
             )
         }
-    )
+    ),
 
+    ["string"] = makeValTbl(
+        {
+            ["len"] = makeValLibFunc(
+                function (args)
+                    argsize(args,1,"string.len")
+                    local s = unbox(args[1],"VALSTR")
+                    return makeValInt(string.len(s))
+                end
+            ),
+
+            ["sub"] = makeValLibFunc(
+                function (args)
+                    argsize(args,3,"string.sub")
+                    local str  = unbox(args[1],"VALSTR")
+                    local i, j = unbox(args[2],"VALINT"), unbox(args[3],"VALINT")
+                    return makeValInt(string.sub(str,i,j))
+                end
+            ),
+
+            ["char"] = makeValLibFunc(
+                function (args)
+                    argsize(args,1,"string.char")
+                    local n = unbox(args[1],"VALINT")
+                    return makeValString(string.char(n))
+                end
+            ),
+
+            ["byte"] = makeValLibFunc(
+                function (args)
+                    argsize(args,1,"string.byte")
+                    local s = unbox(args[1],"VALSTR")
+                    return makeValString(string.byte(s))
+                end
+            ),
+            
+        }
+    )
 }
 
 
