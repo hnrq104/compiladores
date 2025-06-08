@@ -1629,8 +1629,12 @@ local GlobalEnv = {
     ["print"] = makeValLibFunc(
         function(args)
             for i = 1, #args do
-                print(args[i].Val)
+                io.write(tostring(args[i].Val))
+                if i < #args then
+                    io.write(" ")
+                end
             end
+            io.write("\n")
             return makeValNil()
         end
     ),
