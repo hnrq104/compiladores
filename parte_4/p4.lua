@@ -2,6 +2,10 @@
 -- Professor: Hugo Musso
 -- Aluno: Henrique (122078397)
 
+
+-- TRABALHO PARTE LEXER
+-- SOMENTE COISAS DO LEXER
+
 -- tables
 local reserved_words = {
     "and", "break", "do", "else", "elseif", "end",
@@ -20,40 +24,22 @@ local operators = {
 
 local spaces = { " ", "\t", "\n", "\r" }
 
-local function isInTable(str, table)
-    for i = 1, #table do
-        if str == table[i] then return true end
+--- AUXILIARY FUNCTIONS
+--- IS CHAR IN STR
+--- IS IN TABLE
+--- IS LETTER
+--- IS NUMBER
+--- IS ALPHANUMERIC
+local function isCharInStr(char, str)
+    for i = 1, #str do
+        if char == str:sub(i, i) then return true end
     end
     return false
 end
 
--- LEXER FUNCTIONS
-local LS = { -- Stands for Lexer State
-    chars = { io.read(1), io.read(1), io.read(1) },
-    currentLine = 0,
-    currentColumn = 0,
-}
-
---reads one more character, swapping positions
-local function updateLexerState(ls, iterations)
-    local n_iter = iterations or 1
-    for _ = 1, n_iter do
-        if ls.chars[1] == "\n" then
-            ls.currentLine = ls.currentLine + 1
-            ls.currentColumn = 0
-        else
-            ls.currentColumn = ls.currentColumn + 1
-        end
-
-        ls.chars[1], ls.chars[2], ls.chars[3] = ls.chars[2], ls.chars[3], io.read(1)
-    end
-end
-
-
--- AUXILIARY FUNCTIONS
-local function isCharInStr(char, str)
-    for i = 1, #str do
-        if char == str:sub(i, i) then return true end
+local function isInTable(str, table)
+    for i = 1, #table do
+        if str == table[i] then return true end
     end
     return false
 end
@@ -78,28 +64,32 @@ local function isAlphaNumeric(char)
     return isLetter(char) or isNumber(char)
 end
 
-local function readCharInString(ls)
-    local escaped_table = {
-        ["\\\\"] = "\\",
-        ["\\\""] = "\"",
-        ["\\\'"] = "\'",
-        ["\\n"] = "\n",
-        ["\\r"] = "\r",
-        ["\\t"] = "\t"
-    }
 
-    if ls.chars[2] ~= nil then
-        local es = ls.chars[1] .. ls.chars[2]
-        if escaped_table[es] then
-            updateLexerState(ls, 2)
-            return escaped_table[es]
+-- LEXER FUNCTIONS
+
+-- LEXER OBJECT
+local LS = { -- Stands for Lexer State
+    chars = { io.read(1), io.read(1), io.read(1) },
+    currentLine = 0,
+    currentColumn = 0,
+}
+
+--reads one more character, swapping positions
+local function updateLexerState(ls, iterations)
+    local n_iter = iterations or 1
+    for _ = 1, n_iter do
+        if ls.chars[1] == "\n" then
+            ls.currentLine = ls.currentLine + 1
+            ls.currentColumn = 0
+        else
+            ls.currentColumn = ls.currentColumn + 1
         end
-    end
 
-    local c = ls.chars[1]
-    updateLexerState(ls)
-    return c
+        ls.chars[1], ls.chars[2], ls.chars[3] = ls.chars[2], ls.chars[3], io.read(1)
+    end
 end
+
+
 
 local function makeTok(tok_tag, semantic_value, start_line, start_col, end_line, end_col)
     local tab = { Tag = tok_tag, StartLine = start_line, StartCol = start_col, EndLine = end_line, EndCol = end_col }
@@ -199,6 +189,32 @@ local function readOpenBrackets(ls)
         end
     end
     return comment_depth
+end
+
+
+
+
+local function readCharInString(ls)
+    local escaped_table = {
+        ["\\\\"] = "\\",
+        ["\\\""] = "\"",
+        ["\\\'"] = "\'",
+        ["\\n"] = "\n",
+        ["\\r"] = "\r",
+        ["\\t"] = "\t"
+    }
+
+    if ls.chars[2] ~= nil then
+        local es = ls.chars[1] .. ls.chars[2]
+        if escaped_table[es] then
+            updateLexerState(ls, 2)
+            return escaped_table[es]
+        end
+    end
+
+    local c = ls.chars[1]
+    updateLexerState(ls)
+    return c
 end
 
 local function readShortString(ls)
@@ -338,36 +354,24 @@ StartCol, EndCol : (coluna que o token começa e termina)
 StartLine, EndLine : (linha que o token começa e termina)
 ]]
 
--- PARSER
-local function syntaxError(tok, msg)
-    error(string.format("syntax error '%s' %d:%d. :%s", tok.Tag, tok.StartLine, tok.StartCol, msg))
-end
 
 
-local PS = { -- stands for Parser State
-    -- nextToken = getToken(LS),
-    tokens = { getToken(LS), getToken(LS) }
-}
 
 
-local function advanceParser(ps, n_iterations)
-    n_iterations = n_iterations or 1
-    for _ = 1, n_iterations do
-        ps.tokens[1], ps.tokens[2] = ps.tokens[2], getToken(LS)
-    end
-    -- ps.nextToken = getToken(LS)
-end
-
-local function comeParser(ps, tag)
-    local tk = ps.tokens[1]
-    if tk.Tag == tag then
-        advanceParser(ps)
-    else
-        syntaxError(tk, string.format("Parser leu %s, esperava: %s", tk.Tag, tag))
-    end
-end
 
 
+
+
+
+
+
+
+
+--- TRABALHOS POSTERIORES
+--- PARTE PARSER
+
+--- TABELAS
+--- tabela de precedencia binaria
 local parserBinaryPrecedence = {
     ["AND"] = 5,
     ["OR"] = 6,
@@ -386,14 +390,11 @@ local parserBinaryPrecedence = {
     ["/"] = 30,
     ["%"] = 30,
 
+    [".."] = 20
     -- ["^"] = 40
 }
 
-local function Prec(tag)
-    return parserBinaryPrecedence[tag]
-end
-
-
+-- tablela de associatividade
 -- 1 for left associativity, 0 for right associativity
 local parserBinaryAssociativity = {
     ["AND"] = 1,
@@ -418,14 +419,83 @@ local parserBinaryAssociativity = {
     [".."] = 0
 }
 
+-- tabela do que é operacao unaria
+local parserUnaryOps = {
+    ["NOT"] = true, ["-"] = true
+}
+
+
+local CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
+
+
+---
+--- FUNCOES AUXILIARES
+--- SYNTAX ERROR
+--- PREC
+--- ASSOC
+local function syntaxError(tok, msg)
+    error(string.format("syntax error '%s' %d:%d. :%s", tok.Tag, tok.StartLine, tok.StartCol, msg))
+end
+
+local function Prec(tag)
+    return parserBinaryPrecedence[tag]
+end
+
+
 local function Assoc(tag)
     return parserBinaryAssociativity[tag]
 end
 
+local function cmd_enders(tag)
+    return isInTable(tag, CMD_ENDERS)
+end
 
-local parserUnaryOps = {
-    ["NOT"] = true, ["-"] = true
+
+
+
+
+
+
+
+
+
+
+-- PARSER OBJECT
+local PS = { -- stands for Parser State
+    -- nextToken = getToken(LS),
+    tokens = { getToken(LS), getToken(LS) }
 }
+
+--- FUNCOES DO OBJETO PARSER
+--- AVANCA PARSER
+--- COME PARSER
+local function advanceParser(ps, n_iterations)
+    n_iterations = n_iterations or 1
+    for _ = 1, n_iterations do
+        ps.tokens[1], ps.tokens[2] = ps.tokens[2], getToken(LS)
+    end
+    -- ps.nextToken = getToken(LS)
+end
+
+local function comeParser(ps, tag)
+    local tk = ps.tokens[1]
+    if tk.Tag == tag then
+        advanceParser(ps)
+    else
+        syntaxError(tk, string.format("Parser leu %s, esperava: %s", tk.Tag, tag))
+    end
+end
+
+
+
+
+
+
+
+
+
+
+--- MAKE EXP CONSTRUTORES
 
 local function makeExpNil()
     return {
@@ -480,6 +550,10 @@ local function makeExpCall(expf, args)
     }
 end
 
+local function makeExpEOF()
+    return { Tag = "EXPEOF" }
+end
+
 local function makeExpString(str)
     return {
         Tag = "EXPSTR",
@@ -487,28 +561,52 @@ local function makeExpString(str)
     }
 end
 
+local function makeExpTblConstructor(fields)
+    return { Tag = "EXPTBLCONST", Fields = fields }
+end
+
+local function makeExpTblIndex(expTbl, expKey)
+    return { Tag = "EXPTBLINDEX", Table = expTbl, Index = expKey }
+end
+
+local function makeExpLuaFunc(params, body)
+    return { Tag = "EXPLUAFUNC", Params = params, CmdBody = body }
+end
+
+
+local function makeField(expKey, expVal)
+    return { ExpKey = expKey, ExpVal = expVal }
+end
+
+
+
+
+
+
+
+
+
+
+
+
+--- FUNÇÕES DE PARSER
 local parseExp
+local parseBloco
 
-local function parsePrimaria(ps)
-    local tk = ps.tokens[1]
-    if tk.Tag == "NAME" then
-        local exp = makeExpName(tk.Value)
-        advanceParser(ps)
-        return exp
-    end
 
-    if tk.Tag == "(" then
-        advanceParser(ps)
-        local exp = parseExp(ps)
-        comeParser(ps, ")")
-        return exp
-    end
 
-    syntaxError(tk, "Nao possivel parsear exp primaria")
+--- FUNÇÕES AUXILIARES DE PARSER
+--- PEGAR LISTA DE NAME, LISTA DE EXP ETC
+
+local function isSuffix(tag)
+    return tag == "." or tag == "(" or tag == "["
+end
+
+local function isFieldSep(tag)
+    return tag == ',' or tag == ';'
 end
 
 -- retorna uma lista de expressoes que são os argumentos
--- testar depois talvez
 local function parseGetExplist(ps)
     local args = {}
 
@@ -520,22 +618,7 @@ local function parseGetExplist(ps)
     return args
 end
 
-
--- isso é de certa forma associatiov a esquerda com ()
-
-local parseSufixada -- refiz abaixo para o trab 3
--- e refazer novamente para o trabalho 4.
-
-local parseTableConstructor -- trabalho 3
-
--- Trabalho 4
--- implementação de funcoes
-
-local function makeExpLuaFunc(params, body)
-    return { Tag = "EXPLUAFUNC", Param = params, CmdBody = body }
-end
-
-local function readParamList(ps)
+local function readNameList(ps)
     local params = {}
     if ps.tokens[1].Tag == "NAME" then
         params[#params + 1] = ps.tokens[1].Value
@@ -554,7 +637,105 @@ local function readParamList(ps)
     return params
 end
 
-local parseBloco
+
+
+
+
+
+
+
+--- FUNCAO DE PARSING DE NOS DE ARVORE DE EXPRESSAO
+
+--- PARSE DE OBJETOS SIMPLES
+---
+--- PARSEPRIMARIA
+--- PARSESUFIXADA
+local function parsePrimaria(ps)
+    local tk = ps.tokens[1]
+    if tk.Tag == "NAME" then
+        local exp = makeExpName(tk.Value)
+        advanceParser(ps)
+        return exp
+    end
+
+    if tk.Tag == "(" then
+        advanceParser(ps)
+        local exp = parseExp(ps)
+        comeParser(ps, ")")
+        return exp
+    end
+
+    syntaxError(tk, "Nao possivel parsear exp primaria")
+end
+
+local function parseSufixada(ps)
+    local e = parsePrimaria(ps)
+
+    while isSuffix(ps.tokens[1].Tag) do
+        if ps.tokens[1].Tag == "(" then
+            advanceParser(ps)
+
+            local args = {}
+            if ps.tokens[1].Tag ~= ")" then
+                args = parseGetExplist(ps)
+            end
+            comeParser(ps, ")")
+            e = makeExpCall(e, args)
+        elseif ps.tokens[1].Tag == "[" then
+            advanceParser(ps)
+
+            local key_arg = parseExp(ps)
+            comeParser(ps, "]")
+            e = makeExpTblIndex(e, key_arg)
+        else
+            advanceParser(ps)
+
+            if ps.tokens[1].Tag == "NAME" then
+                e = makeExpTblIndex(e, makeExpString(ps.tokens[1].Value))
+            end
+            comeParser(ps, "NAME")
+        end
+    end
+    return e
+end
+
+
+local function parseField(ps)
+    local expkey = nil
+
+    if ps.tokens[1].Tag == '[' then
+        advanceParser(ps)
+        expkey = parseExp(ps)
+        comeParser(ps, ']')
+        comeParser(ps, '=')
+        return makeField(expkey, parseExp(ps))
+    end
+
+    if ps.tokens[1].Tag == "NAME" and ps.tokens[2].Tag == '=' then
+        expkey = makeExpName(ps.tokens[1].Value)
+        advanceParser(ps, 2)
+    end
+
+    return makeField(expkey, parseExp(ps))
+end
+
+local function parseTableConstructor(ps)
+    comeParser(ps, "{")
+    local fields = {}
+
+    if ps.tokens[1].Tag ~= '}' then
+        fields[#fields + 1] = parseField(ps)
+        while isFieldSep(ps.tokens[1].Tag) do
+            advanceParser(ps)
+            if ps.tokens[1].Tag ~= "}" then
+                fields[#fields + 1] = parseField(ps)
+            end
+        end
+    end
+    comeParser(ps, '}')
+    return makeExpTblConstructor(fields)
+end
+
 
 local function parseLuaFunc(ps)
     comeParser(ps, "FUNCTION")
@@ -562,7 +743,7 @@ local function parseLuaFunc(ps)
 
     local params = {} -- inneficient but easier to implement
     if ps.tokens[1].Tag ~= ")" then
-        params = readParamList(ps)
+        params = readNameList(ps)
     end
     comeParser(ps, ")")
 
@@ -594,8 +775,6 @@ local function parseSimples(ps)
         return makeExpInt(num)
     end
 
-    -- Trabalho 3
-
     if ps.tokens[1].Tag == "STRING" then
         local str = ps.tokens[1].Value
         advanceParser(ps)
@@ -606,14 +785,22 @@ local function parseSimples(ps)
         return parseTableConstructor(ps)
     end
 
-    -- Trabalho 4
-
     if ps.tokens[1].Tag == "FUNCTION" then
         return parseLuaFunc(ps)
     end
 
     return parseSufixada(ps)
 end
+
+
+
+
+
+
+
+
+
+--- PARSE DE OPERADORES
 
 local parseUnopExp
 
@@ -649,9 +836,8 @@ local function parseBinopExp(ps, min_prec)
     return e
 end
 
-local function makeExpEOF()
-    return { Tag = "EXPEOF" }
-end
+
+--- FUNÇÃO PARSE EXP
 
 function parseExp(ps)
     if ps.tokens[1].Tag == "EOF" then
@@ -660,109 +846,88 @@ function parseExp(ps)
     return parseBinopExp(ps, 0)
 end
 
---Trabalho 3
--- consertos dos trabalhos anteriores:
--- consertei precedência do '^'
--- consertei erro de eof no lexer
--- consertei erro de leitura de numeros hexa e float
--- o que falta:
--- table constructor/ tbl index
--- while, if
--- var assignment
--- consertar parse sufixo
+---
 
-local function makeField(expKey, expVal)
-    return { ExpKey = expKey, ExpVal = expVal }
-end
 
-local function makeExpTblConstructor(fields)
-    return { Tag = "EXPTBLCONST", Fields = fields }
-end
 
-local function makeExpTblIndex(expTbl, expKey)
-    return { Tag = "EXPTBLINDEX", Table = expTbl, Index = expKey }
-end
---
 
-local function isSuffix(tag)
-    return tag == "." or tag == "(" or tag == "["
-end
 
-function parseSufixada(ps)
-    local e = parsePrimaria(ps)
+--- PARSING DE COMANDOS
+--- AQUI TEMOS FUNCOES
+--- PARSE IF
+--- PARSE LOCAL
+--- PARSE WHILE
+--- PARSE FUNCTION
+--- PARSE SET DE VARIAVEIS
+--- PARSE BLOCO
+--- PARSE CMD
 
-    while isSuffix(ps.tokens[1].Tag) do
-        if ps.tokens[1].Tag == "(" then
-            advanceParser(ps)
 
-            local args = {}
-            if ps.tokens[1].Tag ~= ")" then
-                args = parseGetExplist(ps)
-            end
-            comeParser(ps, ")")
-            e = makeExpCall(e, args)
-        elseif ps.tokens[1].Tag == "[" then
-            advanceParser(ps)
 
-            local key_arg = parseExp(ps)
-            comeParser(ps, "]")
-            e = makeExpTblIndex(e, key_arg)
-        else -- tok.tag = .
-            advanceParser(ps)
 
-            if ps.tokens[1].Tag == "NAME" then
-                e = makeExpTblIndex(e, makeExpString(ps.tokens[1].Value))
-            end
-            comeParser(ps, "NAME")
-        end
-    end
-    return e
-end
 
-local function parseField(ps)
-    local expkey = nil
 
-    if ps.tokens[1].Tag == '[' then
-        advanceParser(ps)
-        expkey = parseExp(ps)
-        comeParser(ps, ']')
-        comeParser(ps, '=')
-        return makeField(expkey, parseExp(ps))
-    end
-
-    if ps.tokens[1].Tag == "NAME" and ps.tokens[2].Tag == '=' then
-        expkey = makeExpName(ps.tokens[1].Value)
-        advanceParser(ps, 2)
-    end
-
-    return makeField(expkey, parseExp(ps))
-end
-
-local function isFieldSep(tag)
-    return tag == ',' or tag == ';'
-end
-
-function parseTableConstructor(ps)
-    comeParser(ps, "{")
-    local fields = {}
-
-    if ps.tokens[1].Tag ~= '}' then
-        fields[#fields + 1] = parseField(ps)
-        while isFieldSep(ps.tokens[1].Tag) do
-            advanceParser(ps)
-            if ps.tokens[1].Tag ~= "}" then
-                fields[#fields + 1] = parseField(ps)
-            end
-        end
-    end
-    comeParser(ps, '}')
-    return makeExpTblConstructor(fields)
-end
+--- MAKE CMD CONSTRUTORES
 
 -- elses_block can be nil
 local function makeIfCmd(exp_cond, block, elses_block)
     return { Tag = "CMDIF", ExpCond = exp_cond, Block = block, Elses = elses_block }
 end
+
+local function makeWhileCmd(exp_cond, while_block)
+    return { Tag = "CMDWHILE", ExpCond = exp_cond, Block = while_block }
+end
+
+
+local function makeBlock(cmds)
+    return { Tag = "CMDBLOCK", Cmds = cmds }
+end
+
+local function makeSetList(setlist, explist)
+    return { Tag = "CMDSETLIST", ExpSetList = setlist, ExpValList = explist }
+end
+
+
+local function makeReturnCmd(explist)
+    return { Tag = "CMDRETURN", ExpRetList = explist }
+end
+
+local function makeLocalSetList(names, exp_values, block)
+    return { Tag = "CMDLOCALSET", Names = names, ExpValList = exp_values, Block = block }
+end
+
+local function makeCallCmd(expF, expArgList)
+    return { Tag = "CMDCALL", F = expF, Args = expArgList }
+end
+
+
+
+
+
+
+
+--- FUNÇÕES AUXILIARES DE PARSING DE COMANDOS
+
+local function parseSufList(ps)
+    local suf = parseSufixada(ps)
+    local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
+    while ps.tokens[1].Tag == ',' do
+        advanceParser(ps)
+        table.insert(sufs, parseSufixada(ps))
+        sufs.HasCall = sufs.HasCall or (sufs[#sufs].Tag == "EXPCALL")
+    end
+    return sufs
+end
+
+
+
+
+
+
+
+
+
+---
 
 local function parseIfCmd(ps)
     comeParser(ps, "IF")
@@ -794,9 +959,6 @@ local function parseIfCmd(ps)
     return ifstart
 end
 
-local function makeWhileCmd(exp_cond, while_block)
-    return { Tag = "CMDWHILE", ExpCond = exp_cond, Block = while_block }
-end
 
 local function parseWhileCmd(ps)
     comeParser(ps, "WHILE")
@@ -807,38 +969,7 @@ local function parseWhileCmd(ps)
     return makeWhileCmd(exp_cond, b)
 end
 
-local function makePrintCmd(args)
-    return { Tag = "CMDPRINT", Args = args }
-end
 
-local function makeBlock(cmds)
-    return { Tag = "CMDBLOCK", Cmds = cmds }
-end
-
-local CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
-local function cmd_enders(tag)
-    return isInTable(tag, CMD_ENDERS)
-end
-
-local function parseSufList(ps)
-    local suf = parseSufixada(ps)
-    local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
-    while ps.tokens[1].Tag == ',' do
-        advanceParser(ps)
-        table.insert(sufs, parseSufixada(ps))
-        sufs.HasCall = sufs.HasCall or (sufs[#sufs].Tag == "EXPCALL")
-    end
-    return sufs
-end
-
-local function makeSetList(setlist, explist)
-    return { Tag = "CMDSETLIST", ExpSetList = setlist, ExpValList = explist }
-end
-
---trab 4
-local function makeReturnCmd(explist)
-    return { Tag = "CMDRETURN", ExpRetList = explist }
-end
 
 local function parseReturnCmd(ps)
     comeParser(ps, "RETURN")
@@ -854,13 +985,9 @@ local function parseReturnCmd(ps)
     syntaxError(ps.tokens[1], "expected end or eof after return")
 end
 
-local function makeLocalSetList(names, exp_values)
-    return { Tag = "CMDLOCALSET", Names = names, ExpValList = exp_values }
-end
 
-local function parseFunctionDeclaration(ps, locality)
-    locality = locality or false -- assume declaration is on global scope
 
+local function parseFunctionDeclaration(ps)
     comeParser(ps, "FUNCTION")
     local name
     if ps.tokens[1].Tag == "NAME" then
@@ -873,17 +1000,13 @@ local function parseFunctionDeclaration(ps, locality)
     local params = {}
     comeParser(ps, "(")
     if ps.tokens[1].Tag ~= ")" then
-        params = readParamList(ps)
+        params = readNameList(ps)
     end
     comeParser(ps, ")")
 
     local body = parseBloco(ps)
     comeParser(ps, "END")
 
-    if locality then
-        -- é esquisito fazer assim, mas como local set lists só aceitam nomes, vou separa ambas
-        return makeLocalSetList({ name }, { makeExpLuaFunc(params, body) })
-    end
     return makeSetList({ makeExpName(name) }, { makeExpLuaFunc(params, body) })
 end
 
@@ -896,11 +1019,15 @@ local function parseLocalCmd(ps)
 
     -- local function name ( params ) block end
     if ps.tokens[1].Tag == "FUNCTION" then
-        return parseFunctionDeclaration(ps, true)
+        local setlist = parseFunctionDeclaration(ps) --- ISSO AQUI É UMA SUJEIRA PARA FACILITAR, IDEALMENTE NÃO É ASSIM
+        local fname = setlist.ExpSetList[1].Value
+        local b = parseBloco(ps)
+
+        return makeLocalSetList({ fname }, setlist.ExpValList, b)
     end
 
     -- to read names is just to read paramaters :)
-    local names = readParamList(ps)
+    local names = readNameList(ps)
 
     local explist = {}
     if ps.tokens[1].Tag == "=" then
@@ -908,15 +1035,14 @@ local function parseLocalCmd(ps)
         explist = parseGetExplist(ps)
     end
 
-    return makeLocalSetList(names, explist)
+    local b = parseBloco(ps)
+
+    return makeLocalSetList(names, explist, b)
 end
 
-local function makeCallCmd(expF, expArgList)
-    return { Tag = "CMDCALL", F = expF, Args = expArgList }
-end
 
 -- Same thing but maybe accepts suf lists
-local function parseCmd2(ps)
+local function parseCmd(ps)
     if cmd_enders(ps.tokens[1].Tag) then return nil end
 
     if ps.tokens[1].Tag == "IF" then
@@ -963,14 +1089,21 @@ end
 
 function parseBloco(ps)
     local cmds = {}
-    local c = parseCmd2(ps)
+    local c = parseCmd(ps)
     while c do
         table.insert(cmds, c)
-        c = parseCmd2(ps)
+        c = parseCmd(ps)
     end
     if #cmds == 1 then return cmds[1] end
     return makeBlock(cmds)
 end
+
+
+
+
+
+
+
 
 -- Evaluation
 local function makeValNil()
@@ -1003,16 +1136,25 @@ local function makeValLuaFunc(env, params, body)
 end
 
 local function makeValLibFunc(func)
-    return { Tag = "VALLIBFUNC", Func = func }
+    return { Tag = "VALLIBFUNC", F = func }
 end
 
 local function makeValReturnList(valList)
-    return { Tag = "VALLISTRET", Values = valList}
+    if #valList == 0 then return makeValNil() end
+    if #valList == 1 then return valList[1] end
+    return { Tag = "VALLISTRET", Values = valList }
 end
---
 
-local function isCondFalse(v)
-    return v == nil or v == false
+
+
+
+
+
+
+--- FUNCOES AUXILIARES DA AVALIACAO
+
+local function isCondFalse(runtime)
+    return runtime.Tag == "VALNIL" or (runtime.Tag == "VALBOOL" and runtime.Val == false)
 end
 
 local function isCondTrue(v)
@@ -1024,18 +1166,27 @@ local function evalError(msg)
     error(msg)
 end
 
--- TRAB 4 LIDAR COM O AMBIENTE
+--- SE O ELEMENTO DE RUTNIME FOR UMA LISTA, PEGA O PRIMEIRO
+--- SE NÃO RETORNA O PROPRIO OBJETO
+local function getSingle(runtime)
+    if runtime.Tag == "VALLISTRET" then
+        return runtime.Values[1]
+    end
+
+    return runtime
+end
+
+
+
+
+
+--- FUNCOES DE AMBIENTE
 
 -- Cria ambiente base
-local function makeBaseEnv()
+local function makeBaseEnv(globals)
     return {
         Tag = "BASENODE",
-        Globals = {
-            ["print"] = makeValLibFunc(print),
-            -- for now only print
-            -- to add modules do something like
-            -- ["io"] = makeTable({["read"] =  makeValLibFunc(io.read)})
-        }
+        Globals = globals
     }
 end
 
@@ -1079,7 +1230,19 @@ local function updateVarValue(varname, newValue, env)
     updateVarValue(varname, newValue, env.UpEnv)
 end
 
-local evalExp
+
+
+
+
+
+--- EVAL FUNCTIONS
+local evalExp, evalCmdCall, evalCmd
+
+local function evalFirst(exp, env)
+    return getSingle(evalExp(exp, env))
+end
+
+
 
 local function evalTblConst(exptbl, env)
     local t = {}
@@ -1087,14 +1250,14 @@ local function evalTblConst(exptbl, env)
     for i = 1, #exptbl.Fields do
         local f = exptbl.Fields[i]
         if f.ExpKey then
-            local key = evalExp(f.ExpKey, env)
+            local key = evalFirst(f.ExpKey, env)
             if key.Val then
-                t[key.Val] = evalExp(f.ExpVal, env)
+                t[key.Val] = evalFirst(f.ExpVal, env)
             else
                 evalError("Trying to assign nil key to table")
             end
         else
-            t[unnumbered_field] = evalExp(f.ExpVal, env)
+            t[unnumbered_field] = evalFirst(f.ExpVal, env)
             unnumbered_field = unnumbered_field + 1
         end
     end
@@ -1105,7 +1268,7 @@ end
 local function evalTblIndex(exptbl_ind, env)
     local t = evalExp(exptbl_ind.Table, env)
     if t.Tag == "VALTBL" then
-        local index = evalExp(exptbl_ind.Index, env)
+        local index = evalFirst(exptbl_ind.Index, env)
         if t.Val[index.Val] then return t.Val[index.Val] end
         return makeValNil()
     end
@@ -1116,7 +1279,6 @@ end
 local inspect = require("inspect")
 
 
-local evalCmdCall
 
 function evalExp(exp, env)
     if exp.Tag == "EXPNAME" then
@@ -1135,19 +1297,24 @@ function evalExp(exp, env)
         return evalTblIndex(exp, env)
     end
 
-    -- Trabalho 4
+
     if exp.Tag == "EXPLUAFUNC" then
         return makeValLuaFunc(env, exp.Params, exp.CmdBody)
     end
 
     if exp.Tag == "EXPCALL" then
-        return evalCmdCall(makeCallCmd(exp.F, exp.Args), env)
+        local ret = evalCmdCall(makeCallCmd(exp.F, exp.Args), env)
+        if ret then
+            return ret
+        else
+            return makeValNil()
+        end
     end
 
     if exp.Tag == "EXPUNOP" then
-        local runtime = evalExp(exp.Exp, env)
+        local runtime = evalFirst(exp.Exp, env)
         if exp.Op == "NOT" then
-            if isCondTrue(runtime.Val) then
+            if isCondTrue(runtime) then
                 return makeValBool(true)
             else
                 return makeValBool(false)
@@ -1165,18 +1332,18 @@ function evalExp(exp, env)
 
     if exp.Tag == "EXPBINOP" then
         if exp.Op == "AND" then
-            local lhs = evalExp(exp.Exp1, env)
-            if isCondFalse(lhs.Val) then return lhs end
-            return evalExp(exp.Exp2, env)
+            local lhs = evalFirst(exp.Exp1, env)
+            if isCondFalse(lhs) then return lhs end
+            return evalFirst(exp.Exp2, env)
         end
 
         if exp.Op == "OR" then
-            local lhs = evalExp(exp.Exp1)
-            if isCondTrue(lhs.Val) then return lhs end
-            return evalExp(exp.Exp2, env)
+            local lhs = evalFirst(exp.Exp1)
+            if isCondTrue(lhs) then return lhs end
+            return evalFirst(exp.Exp2, env)
         end
 
-        local lhs, rhs = evalExp(exp.Exp1, env), evalExp(exp.Exp2, env)
+        local lhs, rhs = evalFirst(exp.Exp1, env), evalFirst(exp.Exp2, env)
 
         if exp.Op == "<" then
             if lhs.Tag == rhs.Tag and lhs.Tag == "VALINT" then
@@ -1265,6 +1432,15 @@ function evalExp(exp, env)
                 evalError(string.format("Trying to exp %s ^ %s", lhs.Tag, rhs.Tag))
             end
         end
+
+        if exp.Op == ".." then
+            if lhs.Tag == rhs.Tag and lhs.Tag == "VALSTR" then
+                return makeValString(lhs.Val .. rhs.Val)
+            else
+                evalError(string.format("Trying to do %s '..' %s", lhs.Tag, rhs.Tag))
+            end
+        end
+        
     end
 
     evalError("Could not evaluate exp", inspect(exp))
@@ -1272,23 +1448,59 @@ end
 
 -- only used once, but denests code
 -- will have to come back for when functions return multiple stuff
-local function evalCmdSetList(setlistcmd, env)
+
+--- EVALSETLIST E A FUNCAO DE AVALIAR LISTAS
+-- recebe uma lista de expressoes para avaliar, se a ultima for uma valretlist, preenche o final da lista
+-- com os valores retornados
+local function evalList(lista, env)
     local values = {}
-    for i = 1, #setlistcmd.ExpValList do
-        table.insert(values, evalExp(setlistcmd.ExpValList[i], env))
+    for i = 1, #lista do
+        if i < #lista then
+            values[#values + 1] = evalFirst(lista[i], env)
+        else -- o ultimo pode ser retorno multiplo de funcao
+            local val = evalExp(lista[i], env)
+            if val.Tag == "VALLISTRET" then
+                for j = 1, #val.Values do
+                    values[#values + 1] = val.Values[j]
+                end
+            else
+                values[#values + 1] = val
+            end
+        end
     end
+    return values
+end
+
+
+
+local function evalCmdSetList(setlistcmd, env)
+    local values = evalList(setlistcmd.ExpValList, env)
+
+    local indexList = {}
+    local n_index = 1
 
     for i = 1, #setlistcmd.ExpSetList do
         local set = setlistcmd.ExpSetList[i]
+        if set.Tag == "EXPTBLINDEX" then
+            indexList[#indexList + 1] = evalFirst(set.Index, env)
+        end
+    end
 
+
+    for i = 1, #setlistcmd.ExpSetList do
+        local set = setlistcmd.ExpSetList[i]
+        local val = values[i] or makeValNil()
         if set.Tag == "EXPNAME" then
-            updateVarValue(set.Value, values[i], env)
+            updateVarValue(set.Value, val, env)
         elseif set.Tag == "EXPTBLINDEX" then
-            local t = evalExp(set.Table, env)
+            local t = evalFirst(set.Table, env)
             if t.Tag == "VALTBL" then
-                local index = evalExp(set.Index, env)
+                local index = indexList[n_index]
+                n_index = n_index + 1
                 if index.Val ~= nil then
                     t.Val[index.Val] = values[i]
+                else
+                    evalError("table index is nil")
                 end
             else
                 evalError(string.format("attempting to index %s object", t.Tag))
@@ -1297,29 +1509,21 @@ local function evalCmdSetList(setlistcmd, env)
     end
 end
 
--- Trabalho 4
-local evalCmd
 
 function evalCmdCall(cmd, env)
     local fval = evalExp(cmd.F, env)
+    local args = evalList(cmd.Args, env)
 
     if fval.Tag == "VALLIBFUNC" then
-        local args = {}
-        for i = 1, #cmd.Args do
-            args[#args + 1] = evalExp(cmd.Args[i], env).Val
-        end
-        fval.F(table.unpack(args))
-        return makeValNil()
+        return fval.F(args) -- Para implementar varargs, sempre vou enviar uma lista de valores
     end
 
     if fval.Tag == "VALLUAFUNC" then
         local newenv = fval.Env
         for i = 1, #fval.Params do
-            if i <= #cmd.Args then
-                newenv = makeLocalEnvNode(fval.Params[i], evalExp(cmd.Args[i]), newenv)
-            else
-                newenv = makeLocalEnvNode(fval.Params[i], makeValNil(), newenv)
-            end
+            local val = args[i] or makeValNil()
+
+            newenv = makeLocalEnvNode(fval.Params[i], val, newenv)
         end
 
         return evalCmd(fval.Body, newenv)
@@ -1328,35 +1532,33 @@ function evalCmdCall(cmd, env)
     evalError("Trying to call non function")
 end
 
-function evalCmd(cmd, env)
-    if cmd.Tag == "CMDIF" then
-        local cond = evalExp(cmd.ExpCond, env)
-        if isCondTrue(cond.Val) then
-            evalCmd(cmd.Block, env)
-        elseif cmd.Elses then
-            evalCmd(cmd.Elses, env)
-        end
-        return
+local function evalCmdReturn(cmd, env)
+    local retlist = evalList(cmd.ExpRetList, env)
+    return makeValReturnList(retlist)
+end
+
+
+local function evalLocalSet(cmd, env)
+    local values = evalList(cmd.ExpValList, env)
+
+    --- atribuicao em novos envs
+    local newenv = env
+    for i = 1, #cmd.Names do
+        local val = values[i] or makeValNil()
+        newenv = makeLocalEnvNode(cmd.Names[i], val, newenv)
     end
 
-    if cmd.Tag == "CMDWHILE" then
-        local cond = evalExp(cmd.ExpCond, env)
-        while isCondTrue(cond.Val) do
-            evalCmd(cmd.Block, env)
-            cond = evalExp(cmd.ExpCond, env)
-        end
-        return
+    return evalCmd(cmd.Block, newenv)
+end
+
+
+function evalCmd(cmd, env)
+    if cmd.Tag == "CMDRETURN" then
+        return evalCmdReturn(cmd, env)
     end
 
     if cmd.Tag == "CMDSETLIST" then
         evalCmdSetList(cmd, env)
-        return
-    end
-
-    if cmd.Tag == "CMDBLOCK" then
-        for i = 1, #cmd.Cmds do
-            evalCmd(cmd.Cmds[i], env)
-        end
         return
     end
 
@@ -1365,14 +1567,239 @@ function evalCmd(cmd, env)
         return
     end
 
+    if cmd.Tag == "CMDLOCALSET" then
+        return evalLocalSet(cmd, env)
+    end
+
+    if cmd.Tag == "CMDIF" then
+        local cond = evalExp(cmd.ExpCond, env)
+        if isCondTrue(cond) then
+            return evalCmd(cmd.Block, env)
+        elseif cmd.Elses then
+            return evalCmd(cmd.Elses, env)
+        end
+        return
+    end
+
+    if cmd.Tag == "CMDWHILE" then
+        local cond = evalExp(cmd.ExpCond, env)
+        while isCondTrue(cond) do
+            local ret = evalCmd(cmd.Block, env)
+            if ret then return ret end
+
+            cond = evalExp(cmd.ExpCond, env)
+        end
+        return
+    end
+
+    if cmd.Tag == "CMDBLOCK" then
+        for i = 1, #cmd.Cmds do
+            local ret = evalCmd(cmd.Cmds[i], env)
+            if ret then return ret end
+        end
+        return
+    end
+
+
     evalError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
 
-local b = parseBloco(PS)
-print(inspect(b))
+-- AMBIENTE BASE
+-- Cria ambiente base com minha versão de funcoes da lib padrao
 
--- print("EVALUATION")
-local env1 = makeBaseEnv()
+-- funcoes que tratam erros
+local function unbox(runtimeval, tipo)
+    if runtimeval.Tag ~= tipo then
+        evalError("funcao esperava :" .. tipo .. " recebeu :" .. runtimeval.Tag)
+    end
+
+    return runtimeval.Val
+end
+
+local function argsize(args, atleast, fname)
+    if #args >= atleast then
+        return true
+    end
+
+    error("function " .. fname .. " expected " .. tostring(atleast) .. " arguments")
+end
+
+--Separei global env aqui para facilitar modifica-lo
+local GlobalEnv = {
+    ["print"] = makeValLibFunc(
+        function(args)
+            for i = 1, #args do
+                print(args[i].Val)
+            end
+            return makeValNil()
+        end
+    ),
+
+    ["tostring"] = makeValLibFunc( -- isso é levemente ineficiente pois pode dar tostring("em uma string")
+        function(args)
+            argsize(args, 1, "tostring")
+            if args[1].Tag == "VALTBL" then
+                return makeValString(tostring(args[1]))
+            elseif args[1].Tag == "VALLUAFUNC" or args[1].Tag == "VALLIBFUNC" then
+                return makeValString("function in " .. tostring(args[1]))
+            end
+
+            return makeValString(tostring(args[1].Val))
+        end
+    ),
+
+    ["error"] = makeValLibFunc(
+        function(args)
+            if #args >= 1 then
+                error(tostring(args[1].Val))
+            end
+            error()
+            return makeValNil()
+        end
+    ),
+
+    ["io"] = makeValTbl({ -- tabela IO
+        ["write"] = makeValLibFunc(
+            function(args)
+                if #args > 0 then
+                    io.write(tostring(args[1].Val))
+                end
+                return makeValNil() -- geralmente retorna o ponteiro para a file, nao aqui
+            end
+        ),
+
+        ["read"] = makeValLibFunc(
+            function(nchars)
+                local c
+                local n = 1
+                if #nchars > 1 then
+                    n = unbox(nchars[1], "VALINT")
+                end
+                c = io.read(n)
+                if c == nil then
+                    return makeValNil()
+                end
+                return makeValString(c)
+            end
+        )
+    }),
+
+
+    ["table"] = makeValTbl(
+        {
+            ["unpack"] = makeValLibFunc(
+                function(list_tbl)
+                    if #list_tbl < 1 or list_tbl[1].Tag ~= "VALTBL" then
+                        evalError("unpack precisa de um argumento tabela")
+                    end
+                    local unpk = {}
+                    for i = 1, #list_tbl[1].Val do
+                        unpk[#unpk + 1] = list_tbl[1].Val[i]
+                    end
+                    return makeValReturnList(unpk)
+                end
+            )
+        }
+    ),
+
+    ["string"] = makeValTbl(
+        {
+            ["len"] = makeValLibFunc(
+                function (args)
+                    argsize(args,1,"string.len")
+                    local s = unbox(args[1],"VALSTR")
+                    return makeValInt(string.len(s))
+                end
+            ),
+
+            ["sub"] = makeValLibFunc(
+                function (args)
+                    argsize(args,3,"string.sub")
+                    local str  = unbox(args[1],"VALSTR")
+                    local i, j = unbox(args[2],"VALINT"), unbox(args[3],"VALINT")
+                    return makeValInt(string.sub(str,i,j))
+                end
+            ),
+
+            ["char"] = makeValLibFunc(
+                function (args)
+                    argsize(args,1,"string.char")
+                    local n = unbox(args[1],"VALINT")
+                    return makeValString(string.char(n))
+                end
+            ),
+
+            ["byte"] = makeValLibFunc(
+                function (args)
+                    argsize(args,1,"string.byte")
+                    local s = unbox(args[1],"VALSTR")
+                    return makeValString(string.byte(s))
+                end
+            ),
+            
+        }
+    )
+}
+
+--[[
+RESUMO TRABALHO 4
+-   importante por causa de muitas mudanças.    
+-   código foi reetruturado em partes mais semelhantes, não mais cronologicamente. (nao tava dando mais)
+
+Mudanças em cada parte (em ordem de código)
+LEXER: Nada mudou
+
+PARSER
+    EXPRESSOES:
+    - Adicionei '..' como operador
+    - Parser de funcoes como function(a,b) cod end (parseLuaFunc) 
+COMANDOS:
+    - Comando Local. É bem parecido com um setlist mas só recebe nomes. (parseLocal)
+    - Comando de atribuição de função global (eu fiz uma sujeira para reutilizar isso no local). (parseFunctionDeclaration)
+    - Comando de return (que obriga ter um end ou um eof depois)
+
+AVALIAÇÃO
+    - Alguns makeVals novos: LuaFunc, LibFunc, ReturnList
+    - Consertei o isCondFalse para receber objetos e não payloads
+    - Adicionei, seguindo uma ideia do Erick de fazer um getSingle. Dado um objeto, se for uma lista de retorno, 
+    retorna o primeiro, se não retorna o objeto mesmo. (Útil para atribuição e retornos multiplos).
+    
+    -- funcoes auxiliares de Ambiente 
+    - Criei uma lista linkada para ambientes, a cabeça da lista é sempre o ambiente global (makeBaseEnv, makeLocalEnvNode)
+    - Funções de busca e update na lista linkada. (getVarValue, updateVarValue)
+
+    -- Funções de avalição
+    - Adicionei EXPLUAFUNC e EXPCALL em evalExp (como casos bases novos)
+    - Adicionei '..' como operação entre strings
+
+    - evalList é uma função nova essencial. Dado uma lista de expressoes e um env, ela retorna 
+    a lista de valores avaliados, pegando o primeiro valor de retorno de cada expressão, a menos da última que,
+    se for tipo retlist, todos os valores são recuperados.
+
+    - evalCmdSetList agora usa evalList e faz a seguinte ordem de operações:
+        (1) avalia os valores a serem atribuidos, (2) avalia os indices, (3) executa as atribuicoes.
+
+    - Adicionei os evals de Comando
+    - evalCmdCall, evalCmdReturn, evalLocalSet
+
+    -- Ambiente Global
+    - botei no final, não sei exatamente onde colocar isso.
+    - adicionei as funções: print, tostring, error, 
+    io.write, io.read, table.unpack, string.len, string.sub, string.char, string.byte
+    - ver se estão funcionando de acordo com as funcionalidades
+
+O QUE FALTA:
+    Já tá bem completinho, falta implementar for, break e substituir todas as aparições de string.format (que são mtas).
+    Depois disso, só olhar para o tratamento de erro para ver se só são usadas funções belas. (remover inspect)
+]]
+
+
+-- EXECUCAO
+local b = parseBloco(PS)
+-- print(inspect(b))
+
+local env1 = makeBaseEnv(GlobalEnv)
+-- print(inspect(env1))
 evalCmd(b, env1)
 
 -- print("ENDING ENVIRONMENT")
