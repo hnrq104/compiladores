@@ -1098,6 +1098,13 @@ function parseBloco(ps)
     return makeBlock(cmds)
 end
 
+
+
+
+
+
+
+
 -- Evaluation
 local function makeValNil()
     return { Tag = "VALNIL" }
@@ -1144,14 +1151,10 @@ end
 
 
 
-
-
-
-
 --- FUNCOES AUXILIARES DA AVALIACAO
 
-local function isCondFalse(v)
-    return v == nil or v == false
+local function isCondFalse(runtime)
+    return runtime.Tag == "VALNIL" or (runtime.Tag == "VALBOOL" and runtime.Val == false)
 end
 
 local function isCondTrue(v)
@@ -1184,13 +1187,6 @@ local function makeBaseEnv(globals)
     return {
         Tag = "BASENODE",
         Globals = globals
-
-        --[[ {
-            ["print"] = makeValLibFunc(print),
-            -- for now only print
-            -- to add modules do something like
-            -- ["io"] = makeTable({["read"] =  makeValLibFunc(io.read)})
-        } ]]
     }
 end
 
@@ -1318,7 +1314,7 @@ function evalExp(exp, env)
     if exp.Tag == "EXPUNOP" then
         local runtime = evalFirst(exp.Exp, env)
         if exp.Op == "NOT" then
-            if isCondTrue(runtime.Val) then
+            if isCondTrue(runtime) then
                 return makeValBool(true)
             else
                 return makeValBool(false)
@@ -1337,13 +1333,13 @@ function evalExp(exp, env)
     if exp.Tag == "EXPBINOP" then
         if exp.Op == "AND" then
             local lhs = evalFirst(exp.Exp1, env)
-            if isCondFalse(lhs.Val) then return lhs end
+            if isCondFalse(lhs) then return lhs end
             return evalFirst(exp.Exp2, env)
         end
 
         if exp.Op == "OR" then
             local lhs = evalFirst(exp.Exp1)
-            if isCondTrue(lhs.Val) then return lhs end
+            if isCondTrue(lhs) then return lhs end
             return evalFirst(exp.Exp2, env)
         end
 
@@ -1477,7 +1473,6 @@ end
 
 
 
---- CONSERTAR ISSO DEPOIS
 local function evalCmdSetList(setlistcmd, env)
     local values = evalList(setlistcmd.ExpValList, env)
 
@@ -1578,7 +1573,7 @@ function evalCmd(cmd, env)
 
     if cmd.Tag == "CMDIF" then
         local cond = evalExp(cmd.ExpCond, env)
-        if isCondTrue(cond.Val) then
+        if isCondTrue(cond) then
             return evalCmd(cmd.Block, env)
         elseif cmd.Elses then
             return evalCmd(cmd.Elses, env)
@@ -1588,7 +1583,7 @@ function evalCmd(cmd, env)
 
     if cmd.Tag == "CMDWHILE" then
         local cond = evalExp(cmd.ExpCond, env)
-        while isCondTrue(cond.Val) do
+        while isCondTrue(cond) do
             local ret = evalCmd(cmd.Block, env)
             if ret then return ret end
 
@@ -1746,14 +1741,63 @@ local GlobalEnv = {
     )
 }
 
+--[[
+RESUMO TRABALHO 4
+-   importante por causa de muitas mudanças.    
+-   código foi reetruturado em partes mais semelhantes, não mais cronologicamente. (nao tava dando mais)
 
+Mudanças em cada parte (em ordem de código)
+LEXER: Nada mudou
+
+PARSER
+    EXPRESSOES:
+    - Adicionei '..' como operador
+    - Parser de funcoes como function(a,b) cod end (parseLuaFunc) 
+COMANDOS:
+    - Comando Local. É bem parecido com um setlist mas só recebe nomes. (parseLocal)
+    - Comando de atribuição de função global (eu fiz uma sujeira para reutilizar isso no local). (parseFunctionDeclaration)
+    - Comando de return (que obriga ter um end ou um eof depois)
+
+AVALIAÇÃO
+    - Alguns makeVals novos: LuaFunc, LibFunc, ReturnList
+    - Consertei o isCondFalse para receber objetos e não payloads
+    - Adicionei, seguindo uma ideia do Erick de fazer um getSingle. Dado um objeto, se for uma lista de retorno, 
+    retorna o primeiro, se não retorna o objeto mesmo. (Útil para atribuição e retornos multiplos).
+    
+    -- funcoes auxiliares de Ambiente 
+    - Criei uma lista linkada para ambientes, a cabeça da lista é sempre o ambiente global (makeBaseEnv, makeLocalEnvNode)
+    - Funções de busca e update na lista linkada. (getVarValue, updateVarValue)
+
+    -- Funções de avalição
+    - Adicionei EXPLUAFUNC e EXPCALL em evalExp (como casos bases novos)
+    - Adicionei '..' como operação entre strings
+
+    - evalList é uma função nova essencial. Dado uma lista de expressoes e um env, ela retorna 
+    a lista de valores avaliados, pegando o primeiro valor de retorno de cada expressão, a menos da última que,
+    se for tipo retlist, todos os valores são recuperados.
+
+    - evalCmdSetList agora usa evalList e faz a seguinte ordem de operações:
+        (1) avalia os valores a serem atribuidos, (2) avalia os indices, (3) executa as atribuicoes.
+
+    - Adicionei os evals de Comando
+    - evalCmdCall, evalCmdReturn, evalLocalSet
+
+    -- Ambiente Global
+    - botei no final, não sei exatamente onde colocar isso.
+    - adicionei as funções: print, tostring, error, 
+    io.write, io.read, table.unpack, string.len, string.sub, string.char, string.byte
+    - ver se estão funcionando de acordo com as funcionalidades
+
+O QUE FALTA:
+    Já tá bem completinho, falta implementar for, break e substituir todas as aparições de string.format (que são mtas).
+    Depois disso, só olhar para o tratamento de erro para ver se só são usadas funções belas. (remover inspect)
+]]
 
 
 -- EXECUCAO
 local b = parseBloco(PS)
 -- print(inspect(b))
 
-print("EVALUATION")
 local env1 = makeBaseEnv(GlobalEnv)
 -- print(inspect(env1))
 evalCmd(b, env1)
