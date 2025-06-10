@@ -421,7 +421,7 @@ local parserBinaryAssociativity = {
 
 -- tabela do que é operacao unaria
 local parserUnaryOps = {
-    ["NOT"] = true, ["-"] = true
+    ["NOT"] = true, ["-"] = true, ["#"] = true
 }
 
 
@@ -1328,6 +1328,14 @@ function evalExp(exp, env)
                 evalError(string.format("Tried to do - %s", runtime.Tag))
             end
         end
+
+        if exp.Op == "#" then
+            if runtime.Tag == "VALTBL" then
+                return makeValInt(#runtime.Val)
+            else
+                evalError(string.format("Tried to do # %s", runtime.Tag))
+            end
+        end
     end
 
     if exp.Tag == "EXPBINOP" then
@@ -1755,7 +1763,7 @@ LEXER: Nada mudou
 
 PARSER
     EXPRESSOES:
-    - Adicionei '..' como operador
+    - Adicionei '..' como operador e '#'
     - Parser de funcoes como function(a,b) cod end (parseLuaFunc) 
 COMANDOS:
     - Comando Local. É bem parecido com um setlist mas só recebe nomes. (parseLocal)
