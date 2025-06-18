@@ -1289,12 +1289,12 @@ local function JUMP_FALSE(label)
 end
 
 -- pula sem comer condicional
-local function HOP_TRUE(label)
-    io.write('\tHOP_TRUE ' .. label .. '\n')
+local function JUMP_TRUE_OR_POP(label)
+    io.write('\tJUMP_TRUE_OR_POP ' .. label .. '\n')
 end
 
-local function HOP_FALSE(label)
-    io.write('\tHOP_FALSE ' .. label .. '\n')
+local function JUMP_FALSE_OR_POP(label)
+    io.write('\tJUMP_FALSE_OR_POP ' .. label .. '\n')
 end
 
 -- chamadas de funcao
@@ -1387,7 +1387,7 @@ end
 local inspect = require("inspect")
 
 
-function genCodeExp(exp)
+function genCodeExp(exp, lbl_t, lbl_f)
     if exp.Tag == "EXPNAME" then
         GET_GLOBAL(exp.Value)
         -- depois ver oq vai acontecer com variaveis locais
@@ -1433,7 +1433,7 @@ function genCodeExp(exp)
     end
 
     if exp.Tag == "EXPUNOP" then
-        genCodeExp(exp.Exp) -- GET FIRST (SOMEHOW)
+        genCodeExp(exp.Exp, lbl_t, lbl_f) -- GET FIRST (SOMEHOW)
 
         -- local runtime = evalFirst(exp.Exp, env)
         if exp.Op == "NOT" then
@@ -1454,19 +1454,17 @@ function genCodeExp(exp)
 
     if exp.Tag == "EXPBINOP" then
         if exp.Op == "AND" then
-            genAnd(exp)
-            return
+            return genAnd(exp, lbl_t, lbl_f)
             -- genError("ainda não está implementado")
         end
 
         if exp.Op == "OR" then
-            genOr(exp)
-            return
+            return genOr(exp, lbl_t, lbl_f)
             -- genError("ainda não está implementado")
         end
 
-        genCodeExp(exp.Exp1) -- lhs
-        genCodeExp(exp.Exp2) -- rhs
+        genCodeExp(exp.Exp1, nil, nil) -- lhs
+        genCodeExp(exp.Exp2, nil, nil) -- rhs
 
         -- local lhs, rhs = evalFirst(exp.Exp1, env), evalFirst(exp.Exp2, env)
 
@@ -1547,83 +1545,122 @@ local function newLabel()
     return lbl
 end
 
+local function isBinopOp(exp, op)
+    return exp.Tag == "EXPBINOP" and exp.Op == op
+end
+
 local function writeLabel(lbl)
     io.write(lbl .. ':\n')
 end
 
-function genOr(orexp, lbl)
-    local newlbl = lbl or newLabel()
-    if orexp.Exp1.Tag == "EXPBINOP" and orexp.Exp1.Op == "OR" then
-        genOr(orexp.Exp1, newlbl)
+function genOr(exp, lbl_t, lbl_f)
+    local newlbl = lbl_t or newLabel()
+    genCodeExp(exp.Exp1,  newlbl, nil)
+    JUMP_TRUE_OR_POP(newlbl)
+    if isBinopOp(exp.Exp2, "AND") then
+        genCodeExp(exp.Exp2, lbl_f, newlbl)
     else
-        genCodeExp(orexp.Exp1)
+        genCodeExp(exp.Exp2, newlbl, lbl_f)
     end
-    HOP_TRUE(newlbl)
-    POP(1)
-    genCodeExp(orexp.Exp2)
-    if lbl == nil then writeLabel(newlbl) end
+
+    if not lbl_t then writeLabel(newlbl) end
 end
 
-function genAnd(andexp, lbl)
-    local newlbl = lbl or newLabel()
-    if andexp.Exp1.Tag == "EXPBINOP" and andexp.Exp1.Op == "AND" then
-        genAnd(andexp.Exp1, newlbl)
+function genAnd(exp, lbl_t, lbl_f)
+    local newlbl = lbl_f or newLabel()
+    genCodeExp(exp.Exp1,  nil, newlbl)
+    JUMP_FALSE_OR_POP(newlbl)
+    if isBinopOp(exp.Exp2, "OR") then
+        genCodeExp(exp.Exp2, newlbl, lbl_t)
     else
-        genCodeExp(andexp.Exp1)
+        genCodeExp(exp.Exp2, lbl_t, newlbl)
     end
-    HOP_FALSE(newlbl)
-    POP(1)
-    genCodeExp(andexp.Exp2)
-    if lbl == nil then writeLabel(newlbl) end
+
+    if not lbl_f then writeLabel(newlbl) end
 end
 
 -- GEN CMDS
 -- genJmp pula se a expressao der 'b' (b é bool) para lbl
-local function genJmp(exp, b, lbl)
+-- local function genJmp(exp, b, lbl)
+--     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
+--         genJmp(exp.Exp, not b, lbl)
+--         return
+--     end
+
+--     if exp.Tag == "EXPBINOP" and exp.Op == "OR" then
+--         if b == true then
+--             genJmp(exp.Exp1, true, lbl)
+--             genJmp(exp.Exp2, true, lbl)
+--         else -- b == false
+--             local l = newLabel()
+--             genJmp(exp.Exp1, true, l)
+--             genJmp(exp.Exp2, false, lbl)
+--             writeLabel(l)
+--         end
+--         return
+--     end
+
+--     if exp.Tag == "EXPBINOP" and exp.Op == "AND" then
+--         if b == false then
+--             genJmp(exp.Exp1, false, lbl)
+--             genJmp(exp.Exp2, false, lbl)
+--         else -- b == true
+--             local l = newLabel()
+--             genJmp(exp.Exp1, false, l)
+--             genJmp(exp.Exp2, true, lbl)
+--             writeLabel(l)
+--         end
+--         return
+--     end
+
+--     genCodeExp(exp)
+--     if b == true then
+--         JUMP_TRUE(lbl)
+--     else -- b == false
+--         JUMP_FALSE(lbl)
+--     end
+-- end
+
+
+local function genJmp(exp, lbl_t, lbl_f)
     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
-        genJmp(exp.Exp, not b, lbl)
+        genCodeExp(exp,lbl_f,lbl_t)
         return
     end
 
-    if exp.Tag == "EXPBINOP" and exp.Op == "OR" then
-        if b == true then
-            genJmp(exp.Exp1, true, lbl)
-            genJmp(exp.Exp2, true, lbl)
-        else -- b == false
-            local l = newLabel()
-            genJmp(exp.Exp1, true, l)
-            genJmp(exp.Exp2, false, lbl)
-            writeLabel(l)
-        end
+    if isBinopOp(exp, "AND") then
+        local newlbl = lbl_f or newLabel()
+        genJmp(exp.Exp1,  nil, newlbl)
+        genJmp(exp.Exp2, lbl_t, nil)
+        if not lbl_f then writeLabel(newlbl) end
         return
     end
 
-    if exp.Tag == "EXPBINOP" and exp.Op == "AND" then
-        if b == false then
-            genJmp(exp.Exp1, false, lbl)
-            genJmp(exp.Exp2, false, lbl)
-        else -- b == true
-            local l = newLabel()
-            genJmp(exp.Exp1, false, l)
-            genJmp(exp.Exp2, true, lbl)
-            writeLabel(l)
-        end
+    if isBinopOp(exp, "OR")  then
+        local newlbl = lbl_t or newLabel()
+        genJmp(exp.Exp1,  newlbl, nil)
+        genJmp(exp.Exp2, nil, lbl_f)
+        if not lbl_t then writeLabel(newlbl) end
         return
     end
 
-    genCodeExp(exp)
-    if b == true then
-        JUMP_TRUE(lbl)
-    else -- b == false
-        JUMP_FALSE(lbl)
+    genCodeExp(exp, nil, nil)
+    if lbl_t then
+        JUMP_TRUE(lbl_t)
+        return
+    end
+
+    if lbl_f then
+        JUMP_FALSE(lbl_f)
+        return
     end
 end
 
 local function genIf(cmdif)
-    local l = newLabel()
-    genJmp(cmdif.ExpCond, false, l)
+    local lbl_f = newLabel()
+    genJmp(cmdif.ExpCond, nil, lbl_f)
     genCodeCmd(cmdif.Block)
-    writeLabel(l)
+    writeLabel(lbl_f)
     if cmdif.Elses then
         genCodeCmd(cmdif.Elses)
     end
@@ -1637,7 +1674,8 @@ local function genWhile(cmdwhile)
     writeLabel(lblock)
     genCodeCmd(cmdwhile.Block)
     writeLabel(lcond)
-    genJmp(cmdwhile.ExpCond, true, lblock)
+    genJmp(cmdwhile.ExpCond, lblock, nil)
+    JUMP_TRUE(lblock)
 end
 
 local function genSet(setlistcmd)
