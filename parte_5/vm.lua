@@ -1,3 +1,4 @@
+-- PREVIOUS STUFF
 local function makeValNil()
     return { Tag = "VALNIL" }
 end
@@ -18,21 +19,6 @@ local function makeValString(str)
     return { Tag = "VALSTR", Val = str }
 end
 
--- Trabalho 4
-local function makeValLuaFunc(env, params, body)
-    return { Tag = "VALLUAFUNC", Params = params, Body = body, Env = env }
-end
-
-local function makeValLibFunc(func)
-    return { Tag = "VALLIBFUNC", F = func }
-end
-
-local function makeValReturnList(valList)
-    if #valList == 0 then return makeValNil() end
-    if #valList == 1 then return valList[1] end
-    return { Tag = "VALLISTRET", Values = valList }
-end
-
 local function isCondFalse(runtime)
     return runtime.Tag == "VALNIL" or (runtime.Tag == "VALBOOL" and runtime.Val == false)
 end
@@ -42,194 +28,417 @@ local function isCondTrue(v)
 end
 
 
---- FUNCOES DE AMBIENTE
 
--- Cria ambiente base
-local function makeBaseEnv(globals)
-    return {
-        Tag = "BASENODE",
-        Globals = globals
-    }
+-- READING AND EXECUTING COMPILED CODE
+
+-- INSTRUCTION/LABEL READING
+local function makeInst(instruction, args)
+    return { instruction, args }
 end
 
--- cria um nó de variavel para lista de ambientes
-local function makeLocalEnvNode(varname, varvalue, up_env)
-    return { Tag = "LOCALNODE", VarName = varname, VarValue = varvalue, UpEnv = up_env }
+-- returns instruction or label str if label
+local function read_line(line)
+    local pattern = "^%s*(%S+)%s*(%S*)%s*(%S*)%s*$"
+    local first_tok, second_tok, third_tok = string.match(line, pattern)
+    if string.sub(first_tok, -1, -1) == ":" then
+        return nil, string.sub(first_tok, 1, -2)
+    end
+
+    if first_tok == "PUSH_STRING" then
+        local first_quotes = string.find(line, '"')
+        if not first_quotes then error("didn't find beginning of string") end
+        local last_quotes = string.find(string.reverse(line), '"')
+        second_tok = string.sub(line, first_quotes + 1, string.len(line) - last_quotes)
+    end
+
+    local args = { second_tok, third_tok }
+    return makeInst(first_tok, args)
 end
 
--- Recupera valor de nome de variavel na lista de ambientes
-local function getVarValue(varname, env)
-    if env.Tag == "BASENODE" then
-        if env.Globals[varname] then
-            return env.Globals[varname]
+-- RETURNS PROGRAM LIST WITH LABELS ALREADY TRANSFORMED INTO NUMBERS
+local function read_program()
+    local instructions = {}
+    local label_set = {}
+
+
+    local line = io.read("l")
+    while line do
+        local inst, label = read_line(line)
+        if label then
+            label_set[label] = #instructions + 1
+        else -- its an instruction
+            instructions[#instructions + 1] = inst
         end
-        -- return makeValNotSet(varname)
-        return makeValNil()
+        line = io.read("l")
     end
-
-    -- else is a local node
-    if env.VarName == varname then
-        return env.VarValue
-    end
-
-    -- else
-    return getVarValue(varname, env.UpEnv)
-end
-
-local function updateVarValue(varname, newValue, env)
-    if env.Tag == "BASENODE" then
-        env.Globals[varname] = newValue
-        return
-    end
-
-    -- else is a local node
-    if env.VarName == varname then
-        env.VarValue = newValue
-        return
-    end
-
-    -- else
-    updateVarValue(varname, newValue, env.UpEnv)
-end
-
--- AMBIENTE BASE
--- Cria ambiente base com minha versão de funcoes da lib padrao
-
--- funcoes que tratam erros
-local function unbox(runtimeval, tipo)
-    if runtimeval.Tag ~= tipo then
-        error("funcao esperava :" .. tipo .. " recebeu :" .. runtimeval.Tag)
-    end
-
-    return runtimeval.Val
-end
-
-local function argsize(args, atleast, fname)
-    if #args >= atleast then
-        return true
-    end
-
-    error("function " .. fname .. " expected " .. tostring(atleast) .. " arguments")
+    return { Insts = instructions, LabelSet = label_set }
 end
 
 
---Separei global env aqui para facilitar modifica-lo
-local GlobalEnv = {
-    ["print"] = makeValLibFunc(
-        function(args)
-            for i = 1, #args do
-                io.write(tostring(args[i].Val))
-                if i < #args then
-                    io.write(" ")
-                end
-            end
-            io.write("\n")
-            return makeValNil()
-        end
-    ),
-
-    ["tostring"] = makeValLibFunc( -- isso é levemente ineficiente pois pode dar tostring("em uma string")
-        function(args)
-            argsize(args, 1, "tostring")
-            if args[1].Tag == "VALTBL" then
-                return makeValString(tostring(args[1]))
-            elseif args[1].Tag == "VALLUAFUNC" or args[1].Tag == "VALLIBFUNC" then
-                return makeValString("function in " .. tostring(args[1]))
-            end
-
-            return makeValString(tostring(args[1].Val))
-        end
-    ),
-
-    ["error"] = makeValLibFunc(
-        function(args)
-            if #args >= 1 then
-                error(tostring(args[1].Val))
-            end
-            error()
-            return makeValNil()
-        end
-    ),
-
-    ["io"] = makeValTbl({ -- tabela IO
-        ["write"] = makeValLibFunc(
-            function(args)
-                if #args > 0 then
-                    io.write(tostring(args[1].Val))
-                end
-                return makeValNil() -- geralmente retorna o ponteiro para a file, nao aqui
-            end
-        ),
-
-        ["read"] = makeValLibFunc(
-            function(nchars)
-                local c
-                local n = 1
-                if #nchars > 1 then
-                    n = unbox(nchars[1], "VALINT")
-                end
-                c = io.read(n)
-                if c == nil then
-                    return makeValNil()
-                end
-                return makeValString(c)
-            end
-        )
-    }),
-
-
-    ["table"] = makeValTbl(
-        {
-            ["unpack"] = makeValLibFunc(
-                function(list_tbl)
-                    if #list_tbl < 1 or list_tbl[1].Tag ~= "VALTBL" then
-                        genError("unpack precisa de um argumento tabela")
-                    end
-                    local unpk = {}
-                    for i = 1, #list_tbl[1].Val do
-                        unpk[#unpk + 1] = list_tbl[1].Val[i]
-                    end
-                    return makeValReturnList(unpk)
-                end
-            )
-        }
-    ),
-
-    ["string"] = makeValTbl(
-        {
-            ["len"] = makeValLibFunc(
-                function(args)
-                    argsize(args, 1, "string.len")
-                    local s = unbox(args[1], "VALSTR")
-                    return makeValInt(string.len(s))
-                end
-            ),
-
-            ["sub"] = makeValLibFunc(
-                function(args)
-                    argsize(args, 3, "string.sub")
-                    local str  = unbox(args[1], "VALSTR")
-                    local i, j = unbox(args[2], "VALINT"), unbox(args[3], "VALINT")
-                    return makeValInt(string.sub(str, i, j))
-                end
-            ),
-
-            ["char"] = makeValLibFunc(
-                function(args)
-                    argsize(args, 1, "string.char")
-                    local n = unbox(args[1], "VALINT")
-                    return makeValString(string.char(n))
-                end
-            ),
-
-            ["byte"] = makeValLibFunc(
-                function(args)
-                    argsize(args, 1, "string.byte")
-                    local s = unbox(args[1], "VALSTR")
-                    return makeValString(string.byte(s))
-                end
-            ),
-
-        }
-    )
+VM = {
+    Stack = {},
+    PC = 1,
+    Prog = read_program(),
+    Globals = {}
 }
+
+local inspect = require("inspect")
+
+local function is_exit(inst)
+    return inst[1] == "EXIT"
+end
+
+local function vm_top(vm)
+    return vm.Stack[#vm.Stack]
+end
+
+local function vm_pop(vm)
+    if #vm.Stack == 0 then
+        error("stack empty!")
+    end
+    local popped = vm.Stack[#vm.Stack]
+    table.remove(vm.Stack, #vm.Stack)
+    return popped
+end
+
+local function vm_push(vm, val)
+    table.insert(vm.Stack, val)
+end
+
+local function call(f, args)
+    error("nao implementado ainda")
+end
+
+-- fazer um switch-case pode ser mais rápido que o usual!
+local table_instructions = {
+    -- PUSHS
+    ["PUSH_NIL"] = function(vm)
+        vm_push(vm, makeValNil())
+        vm.PC = vm.PC + 1
+    end,
+
+    ["PUSH_TRUE"] = function(vm)
+        vm_push(vm, makeValBool(true))
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["PUSH_FALSE"] = function(vm)
+        vm_push(vm, makeValBool(false))
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["PUSH_NUMBER"] = function(vm, args)
+        vm_push(vm, makeValInt(tonumber(args[1])))
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["PUSH_STRING"] = function(vm, args)
+        -- still need to parse string correctly
+        vm_push(vm, makeValString(args[1]))
+        vm.PC = vm.PC + 1
+
+    end,
+
+
+    -- TABLES
+    ["NEW_TABLE"] = function(vm)
+        vm_push(vm, makeValTbl({}))
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["GET_TABLE"] = function(vm)
+        local key = vm_pop(vm)
+        local tbl = vm_pop(vm)
+        vm_push(tbl.Val[key.Val])
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["SET_TABLE"] = function(vm)
+        local val = vm_pop(vm)
+        local key = vm_pop(vm)
+        local tbl = vm_pop(vm)
+        tbl.Val[key.Val] = val
+        vm.PC = vm.PC + 1
+
+    end,
+
+    -- GLOBAIS
+    ["GET_GLOBAL"] = function(vm, args)
+        vm_push(vm, vm.Globals[args[1]] or makeValNil())
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["SET_GLOBAL"] = function(vm, args)
+        local val = vm_pop(vm)
+        vm.Globals[args[1]] = val
+        vm.PC = vm.PC + 1
+
+    end,
+
+    -- OPERADORES UNARIOS
+    ["NEG"] = function(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" then
+            vm_push(vm, makeValInt(-a.Val))
+        else
+            error("trying to neg non integer")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+
+    ["LEN"] = function(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALTBL" then
+            vm_push(vm, makeValInt(#a.Val))
+        else
+            error("trying to len non table")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["NOT"] = function(vm)
+        local a = vm_pop(vm)
+        vm_push(vm, makeValBool(not isCondTrue(a)))
+        vm.PC = vm.PC + 1
+
+    end,
+
+
+    -- Binarias
+    -- a op b
+    ["ADD"] = function(vm)
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValInt(a.Val + b.Val))
+        else
+            error("trying to + stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["SUB"] = function(vm)
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValInt(a.Val - b.Val))
+        else
+            error("trying to - stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["MUL"] = function(vm)
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValInt(a.Val * b.Val))
+        else
+            error("trying to * stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["DIV"] = function(vm)
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValInt(a.Val / b.Val))
+        else
+            error("trying to / stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["MOD"] = function(vm)
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValInt(a.Val % b.Val))
+        else
+            error("trying to % stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["CONCAT"] = function(vm)
+        local a = vm_pop(vm)
+        local b = vm_pop(vm)
+        if a.Tag == "VALSTR" and b.Tag == "VALSTR" then
+            vm_push(vm, makeValInt(a.Val + b.Val))
+        else
+            error("trying to .. stuff that isn't string")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["EQ"] = function(vm)
+        local a = vm_pop(vm)
+        local b = vm_pop(vm)
+        vm_push(makeValBool(a.Val == b.Val))
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["NEQ"] = function(vm)
+        local top = vm_pop(vm)
+        local bot = vm_pop(vm)
+        vm_push(makeValBool(bot.Val ~= top.Val))
+        vm.PC = vm.PC + 1
+
+    end,
+    
+    ["LT"] = function(vm)
+        local top = vm_pop(vm)
+        local bot = vm_pop(vm)
+        if bot.Tag == "VALINT" and top.Tag == "VALINT" then
+            vm_push(vm, makeValBool(bot.Val < top.Val))
+        else
+            error("trying to < stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["LEQ"] = function(vm)
+        local top = vm_pop(vm)
+        local bot = vm_pop(vm)
+        if bot.Tag == "VALINT" and top.Tag == "VALINT" then
+            vm_push(vm, makeValBool(bot.Val <= top.Val))
+        else
+            error("trying to <= stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["GT"] = function(vm)
+        local a = vm_pop(vm)
+        local b = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValBool(a.Val > b.Val))
+        else
+            error("trying to > stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["GEQ"] = function(vm)
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValBool(a.Val >= b.Val))
+        else
+            error("trying to >= stuff that isn't number")
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    -- DESVIOS
+    ["JUMP"] = function (vm, args)
+        vm.PC = vm.Prog.LabelSet[args[1]]
+    end,
+
+    ["JUMP_TRUE"] = function (vm, args)
+        local b = vm_pop(vm)
+        if isCondTrue(b) then
+            vm.PC = vm.Prog.LabelSet[args[1]]
+        else
+            vm.PC = vm.PC + 1
+        end
+    end,
+
+    ["JUMP_FALSE"] = function (vm, args)
+        local b = vm_pop(vm)
+        if isCondFalse(b) then
+            vm.PC = vm.Prog.LabelSet[args[1]]
+        else
+            vm.PC = vm.PC + 1
+        end
+    end,
+
+    ["JUMP_TRUE_OR_POP"] = function (vm, args)
+        local b = vm_top(vm)
+        if isCondTrue(b) then
+            vm.PC = vm.Prog.LabelSet[args[1]]
+        else
+            vm_pop(vm)
+            vm.PC = vm.PC + 1
+        end
+    end,
+
+    ["JUMP_FALSE_OR_POP"] = function (vm, args)
+        local b = vm_top(vm)
+        if isCondFalse(b) then
+            vm.PC = vm.Prog.LabelSet[args[1]]
+        else
+            vm_pop(vm)
+            vm.PC = vm.PC + 1
+        end
+    end,
+
+    ["CALL"] = function (vm, args)
+        local n_args = tonumber(args[1])
+        local f_args = {}
+        for _ = 1, n_args do
+            table.insert(f_args,vm_pop(vm))
+        end
+        local f = vm_pop(vm)
+
+        call(f,f_args)
+    end,
+
+    ["POP"] = function (vm, args)
+        for _ = 1, tonumber(args[1]) do
+            vm_pop(vm)
+        end
+        vm.PC = vm.PC + 1
+
+    end,
+
+    ["EXIT"] = function (vm)
+        print("EXITING PROGRAM EXEC")
+        os.exit(1)
+    end
+
+}
+
+
+
+local function run_inst(vm, inst)
+    -- this is equivalent to a switch case, i don't know if it's faster than a bazillion ifs
+    local inst_function = table_instructions[inst[1]]
+    local args = inst[2]
+    inst_function(vm,args)
+end
+
+
+local function run_vm(vm)
+    while true do
+        local inst = vm.Prog.Insts[vm.PC]
+        if is_exit(inst) then
+            break
+        end
+        run_inst(vm, inst)
+    end
+end
+
+run_vm(VM)
+print(inspect(VM))

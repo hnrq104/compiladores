@@ -1181,8 +1181,16 @@ local function PUSH_NUMBER(n)
     io.write('\tPUSH_NUMBER ' .. n_str .. '\n')
 end
 
+
+local string_rep_table = {
+    ["\n"] = "\\n",
+    ["\t"] = "\\t",
+}
+
 local function PUSH_STRING(str)
     -- POR ENQUANTO TÁ ASSIM TENHO QUE DESESCAPAR OS CARACTERES
+    -- VOU RESOLVER SUJAMENTE AGORA USANDO G:SUB PQ É MAIS FÁCILS
+    str = string.gsub(str,'[\n\t]', string_rep_table)
     io.write('\tPUSH_STRING "' .. str .. '"\n')
 end
 
@@ -1376,9 +1384,9 @@ local function genTblIndex(exptbl_ind)
 end
 
 local function genCall(expcall)
-    genCodeCmd(expcall.F)
+    genCodeExp(expcall.F)
     for i = 1, #expcall.Args do
-        genCodeCmd(expcall.Args[i])
+        genCodeExp(expcall.Args[i])
     end
     CALL(#expcall.Args)
 end
@@ -1387,6 +1395,8 @@ end
 local inspect = require("inspect")
 
 
+
+-- SHOULD DO A SWITCH
 function genCodeExp(exp, lbl_t, lbl_f)
     if exp.Tag == "EXPNAME" then
         GET_GLOBAL(exp.Value)
@@ -1562,7 +1572,6 @@ function genOr(exp, lbl_t, lbl_f)
     else
         genCodeExp(exp.Exp2, newlbl, lbl_f)
     end
-
     if not lbl_t then writeLabel(newlbl) end
 end
 
@@ -1621,38 +1630,17 @@ end
 --     end
 -- end
 
-
+-- DUMBWAY FOR NOW, I CAN LATER TRY TO MAKE IT BETTER
 local function genJmp(exp, lbl_t, lbl_f)
     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
-        genCodeExp(exp,lbl_f,lbl_t)
+        genJmp(exp,lbl_f,lbl_t)
         return
     end
-
-    if isBinopOp(exp, "AND") then
-        local newlbl = lbl_f or newLabel()
-        genJmp(exp.Exp1,  nil, newlbl)
-        genJmp(exp.Exp2, lbl_t, nil)
-        if not lbl_f then writeLabel(newlbl) end
-        return
-    end
-
-    if isBinopOp(exp, "OR")  then
-        local newlbl = lbl_t or newLabel()
-        genJmp(exp.Exp1,  newlbl, nil)
-        genJmp(exp.Exp2, nil, lbl_f)
-        if not lbl_t then writeLabel(newlbl) end
-        return
-    end
-
-    genCodeExp(exp, nil, nil)
+    genCodeExp(exp, lbl_t, lbl_f)
     if lbl_t then
         JUMP_TRUE(lbl_t)
-        return
-    end
-
-    if lbl_f then
+    else
         JUMP_FALSE(lbl_f)
-        return
     end
 end
 
@@ -1675,16 +1663,15 @@ local function genWhile(cmdwhile)
     genCodeCmd(cmdwhile.Block)
     writeLabel(lcond)
     genJmp(cmdwhile.ExpCond, lblock, nil)
-    JUMP_TRUE(lblock)
 end
 
 local function genSet(setlistcmd)
-    if #setlistcmd.ExpSetList == 1 or #setlistcmd.ExpValList == 1 then
-        local set = setlistcmd.ExpSetList[1]
-        local val = setlistcmd.ExpValList[1]
+    for i = 1, #setlistcmd.ExpSetList do -- ISSO AQUI FUNCIONA AINDA SOMENTE SEM RETORNO MULTIPLO, 
+        local set = setlistcmd.ExpSetList[i]
+        local val = setlistcmd.ExpValList[i]
 
         if set.Tag == "EXPTBLINDEX" then
-            genCodeExp(set.Table) -- essa ordem tá errada
+            genCodeExp(set.Table) -- essa ordem tá esquisita
             genCodeExp(set.Index)
             genCodeExp(val)
             SET_TABLE()
@@ -1692,10 +1679,9 @@ local function genSet(setlistcmd)
             genCodeExp(val)
             SET_GLOBAL(set.Value)
         end
-        return
     end
-
-    genError("ainda nao implementado")
+    
+    -- genError("ainda nao implementado")
 end
 
 function genCodeCmd(cmd)
@@ -1709,7 +1695,9 @@ function genCodeCmd(cmd)
     end
 
     if cmd.Tag == "CMDCALL" then
-        genError("ainda nao implementado")
+        genCall(cmd)
+        return
+        -- genError("ainda nao implementado")
     end
 
     if cmd.Tag == "CMDLOCALSET" then
@@ -1745,6 +1733,7 @@ end
 local b = parseBloco(PS)
 -- print(inspect(b))
 genCodeCmd(b)
+EXIT()
 
 -- local env1 = makeBaseEnv(GlobalEnv)
 -- print(inspect(env1))
