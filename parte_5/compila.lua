@@ -1193,7 +1193,7 @@ local string_rep_table = {
 local function PUSH_STRING(str)
     -- POR ENQUANTO TÁ ASSIM TENHO QUE DESESCAPAR OS CARACTERES
     -- VOU RESOLVER SUJAMENTE AGORA USANDO G:SUB PQ É MAIS FÁCILS
-    str = string.gsub(str,'[\n\t]', string_rep_table)
+    str = string.gsub(str,'[\\\n\t]', string_rep_table)
     io.write('\tPUSH_STRING "' .. str .. '"\n')
 end
 
@@ -1442,7 +1442,7 @@ function genCodeExp(exp, lbl_t, lbl_f)
 
     if exp.Tag == "EXPCALL" then
         genCall(exp)
-        -- genError("ainda não está implementado")
+        return
     end
 
     if exp.Tag == "EXPUNOP" then
@@ -1547,7 +1547,7 @@ function genCodeExp(exp, lbl_t, lbl_f)
         end
     end
 
-    genError("Could not gen exp", inspect(exp))
+    genError(string.format("Could not gen exp %s", tostring(inspect(exp))))
 end
 
 -- CONTADOR DE LABEL
@@ -1591,55 +1591,14 @@ function genAnd(exp, lbl_t, lbl_f)
     if not lbl_f then writeLabel(newlbl) end
 end
 
--- GEN CMDS
--- genJmp pula se a expressao der 'b' (b é bool) para lbl
--- local function genJmp(exp, b, lbl)
---     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
---         genJmp(exp.Exp, not b, lbl)
---         return
---     end
 
---     if exp.Tag == "EXPBINOP" and exp.Op == "OR" then
---         if b == true then
---             genJmp(exp.Exp1, true, lbl)
---             genJmp(exp.Exp2, true, lbl)
---         else -- b == false
---             local l = newLabel()
---             genJmp(exp.Exp1, true, l)
---             genJmp(exp.Exp2, false, lbl)
---             writeLabel(l)
---         end
---         return
---     end
-
---     if exp.Tag == "EXPBINOP" and exp.Op == "AND" then
---         if b == false then
---             genJmp(exp.Exp1, false, lbl)
---             genJmp(exp.Exp2, false, lbl)
---         else -- b == true
---             local l = newLabel()
---             genJmp(exp.Exp1, false, l)
---             genJmp(exp.Exp2, true, lbl)
---             writeLabel(l)
---         end
---         return
---     end
-
---     genCodeExp(exp)
---     if b == true then
---         JUMP_TRUE(lbl)
---     else -- b == false
---         JUMP_FALSE(lbl)
---     end
--- end
-
--- DUMBWAY FOR NOW, I CAN LATER TRY TO MAKE IT BETTER
+-- Ruim por enquanto, depois devo consertar para não fazer o jump (acho que ja sei como)
 local function genJmp(exp, lbl_t, lbl_f)
     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
         genJmp(exp,lbl_f,lbl_t)
         return
     end
-    genCodeExp(exp, lbl_t, lbl_f)
+    genCodeExp(exp, nil, nil)
     if lbl_t then
         JUMP_TRUE(lbl_t)
     else

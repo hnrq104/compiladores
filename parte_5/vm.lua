@@ -40,7 +40,7 @@ local string_rep_table = {
 }
 -- decode strings
 local function prepare_string(str)
-    local s = string.gsub(str,'\\[nt]', string_rep_table) 
+    local s = string.gsub(str, '\\[\\nt]', string_rep_table)
     return s
 end
 
@@ -59,7 +59,7 @@ local function argsize(args, atleast, fname)
         return true
     end
 
-    error(string.format("function %s expected %d arguments",fname,atleast))
+    error(string.format("function %s expected %d arguments", fname, atleast))
 end
 
 
@@ -129,7 +129,7 @@ local GlobalEnv = {
 
     ["math"] = makeValTbl({
         ["sqrt"] = makeValLibFunc(
-            function (args)
+            function(args)
                 argsize(args, 1, "math.sqrt")
                 local n = unbox(args[1], "VALINT")
                 return makeValInt(math.sqrt(n))
@@ -189,19 +189,19 @@ end
 local function read_line(line)
     -- eh push string?
     local first_tok, second_tok, third_tok
-    local is_push_str = string.find(line,"PUSH_STRING")
+    local is_push_str = string.find(line, "PUSH_STRING")
 
     if is_push_str then
         local first_quotes = string.find(line, '"')
         if not first_quotes then error("didn't find beginning of string") end
         local last_quotes = string.find(string.reverse(line), '"')
         second_tok = string.sub(line, first_quotes + 1, string.len(line) - last_quotes)
-        return makeInst("PUSH_STRING", {second_tok})
+        return makeInst("PUSH_STRING", { second_tok })
     end
 
     local pattern = "^%s*(%S+)%s*(%S*)%s*(%S*)%s*$"
     first_tok, second_tok, third_tok = string.match(line, pattern)
-    
+
     if string.sub(first_tok, -1, -1) == ":" then
         return nil, string.sub(first_tok, 1, -2)
     end
@@ -230,18 +230,6 @@ local function read_program()
     return { Insts = instructions, LabelSet = label_set }
 end
 
-
-
-
-VM = {
-    Stack = {},
-    PC = 1,
-    Prog = read_program(),
-    Globals = GlobalEnv
-}
-
-local inspect = require("inspect")
-
 local function is_exit(inst)
     return inst[1] == "EXIT"
 end
@@ -267,7 +255,7 @@ local function call(vm, f, args)
     if f.Tag == "VALLIBFUNC" then
         local ret = f.F(args)
         if ret.Tag ~= "VALNIL" then
-            vm_push(vm,ret)
+            vm_push(vm, ret)
         end
     else
         error("nao implementado ainda")
@@ -285,26 +273,22 @@ local table_instructions = {
     ["PUSH_TRUE"] = function(vm)
         vm_push(vm, makeValBool(true))
         vm.PC = vm.PC + 1
-
     end,
 
     ["PUSH_FALSE"] = function(vm)
         vm_push(vm, makeValBool(false))
         vm.PC = vm.PC + 1
-
     end,
 
     ["PUSH_NUMBER"] = function(vm, args)
         vm_push(vm, makeValInt(tonumber(args[1])))
         vm.PC = vm.PC + 1
-
     end,
 
     ["PUSH_STRING"] = function(vm, args)
         -- still need to parse string correctly
         vm_push(vm, makeValString(prepare_string(args[1])))
         vm.PC = vm.PC + 1
-
     end,
 
 
@@ -312,15 +296,13 @@ local table_instructions = {
     ["NEW_TABLE"] = function(vm)
         vm_push(vm, makeValTbl({}))
         vm.PC = vm.PC + 1
-
     end,
 
     ["GET_TABLE"] = function(vm)
         local key = vm_pop(vm)
         local tbl = vm_pop(vm)
-        vm_push(tbl.Val[key.Val])
+        vm_push(vm, tbl.Val[key.Val])
         vm.PC = vm.PC + 1
-
     end,
 
     ["SET_TABLE"] = function(vm)
@@ -329,21 +311,18 @@ local table_instructions = {
         local tbl = vm_pop(vm)
         tbl.Val[key.Val] = val
         vm.PC = vm.PC + 1
-
     end,
 
     -- GLOBAIS
     ["GET_GLOBAL"] = function(vm, args)
         vm_push(vm, vm.Globals[args[1]] or makeValNil())
         vm.PC = vm.PC + 1
-
     end,
 
     ["SET_GLOBAL"] = function(vm, args)
         local val = vm_pop(vm)
         vm.Globals[args[1]] = val
         vm.PC = vm.PC + 1
-
     end,
 
     -- OPERADORES UNARIOS
@@ -355,7 +334,6 @@ local table_instructions = {
             error("trying to neg non integer")
         end
         vm.PC = vm.PC + 1
-
     end,
 
 
@@ -367,19 +345,18 @@ local table_instructions = {
             error("trying to len non table")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["NOT"] = function(vm)
         local a = vm_pop(vm)
         vm_push(vm, makeValBool(not isCondTrue(a)))
         vm.PC = vm.PC + 1
-
     end,
 
 
     -- Binarias
     -- a op b
+    -- generally b will be on top
     ["ADD"] = function(vm)
         local b = vm_pop(vm)
         local a = vm_pop(vm)
@@ -389,7 +366,6 @@ local table_instructions = {
             error("trying to + stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["SUB"] = function(vm)
@@ -401,7 +377,6 @@ local table_instructions = {
             error("trying to - stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["MUL"] = function(vm)
@@ -413,7 +388,6 @@ local table_instructions = {
             error("trying to * stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["DIV"] = function(vm)
@@ -425,7 +399,6 @@ local table_instructions = {
             error("trying to / stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["MOD"] = function(vm)
@@ -437,71 +410,64 @@ local table_instructions = {
             error("trying to % stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["CONCAT"] = function(vm)
-        local a = vm_pop(vm)
         local b = vm_pop(vm)
+        local a = vm_pop(vm)
         if a.Tag == "VALSTR" and b.Tag == "VALSTR" then
             vm_push(vm, makeValInt(a.Val + b.Val))
         else
             error("trying to .. stuff that isn't string")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["EQ"] = function(vm)
-        local a = vm_pop(vm)
         local b = vm_pop(vm)
+        local a = vm_pop(vm)
         vm_push(makeValBool(a.Val == b.Val))
         vm.PC = vm.PC + 1
-
     end,
 
     ["NEQ"] = function(vm)
-        local top = vm_pop(vm)
-        local bot = vm_pop(vm)
-        vm_push(makeValBool(bot.Val ~= top.Val))
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        vm_push(makeValBool(a.Val ~= b.Val))
         vm.PC = vm.PC + 1
-
     end,
-    
+
     ["LT"] = function(vm)
-        local top = vm_pop(vm)
-        local bot = vm_pop(vm)
-        if bot.Tag == "VALINT" and top.Tag == "VALINT" then
-            vm_push(vm, makeValBool(bot.Val < top.Val))
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValBool(a.Val < b.Val))
         else
             error("trying to < stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["LEQ"] = function(vm)
-        local top = vm_pop(vm)
-        local bot = vm_pop(vm)
-        if bot.Tag == "VALINT" and top.Tag == "VALINT" then
-            vm_push(vm, makeValBool(bot.Val <= top.Val))
+        local b = vm_pop(vm)
+        local a = vm_pop(vm)
+        if a.Tag == "VALINT" and b.Tag == "VALINT" then
+            vm_push(vm, makeValBool(a.Val <= b.Val))
         else
             error("trying to <= stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["GT"] = function(vm)
-        local a = vm_pop(vm)
         local b = vm_pop(vm)
+        local a = vm_pop(vm)
         if a.Tag == "VALINT" and b.Tag == "VALINT" then
             vm_push(vm, makeValBool(a.Val > b.Val))
         else
             error("trying to > stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     ["GEQ"] = function(vm)
@@ -513,15 +479,14 @@ local table_instructions = {
             error("trying to >= stuff that isn't number")
         end
         vm.PC = vm.PC + 1
-
     end,
 
     -- DESVIOS
-    ["JUMP"] = function (vm, args)
+    ["JUMP"] = function(vm, args)
         vm.PC = vm.Prog.LabelSet[args[1]]
     end,
 
-    ["JUMP_TRUE"] = function (vm, args)
+    ["JUMP_TRUE"] = function(vm, args)
         local b = vm_pop(vm)
         if isCondTrue(b) then
             vm.PC = vm.Prog.LabelSet[args[1]]
@@ -530,7 +495,7 @@ local table_instructions = {
         end
     end,
 
-    ["JUMP_FALSE"] = function (vm, args)
+    ["JUMP_FALSE"] = function(vm, args)
         local b = vm_pop(vm)
         if isCondFalse(b) then
             vm.PC = vm.Prog.LabelSet[args[1]]
@@ -539,7 +504,7 @@ local table_instructions = {
         end
     end,
 
-    ["JUMP_TRUE_OR_POP"] = function (vm, args)
+    ["JUMP_TRUE_OR_POP"] = function(vm, args)
         local b = vm_top(vm)
         if isCondTrue(b) then
             vm.PC = vm.Prog.LabelSet[args[1]]
@@ -549,7 +514,7 @@ local table_instructions = {
         end
     end,
 
-    ["JUMP_FALSE_OR_POP"] = function (vm, args)
+    ["JUMP_FALSE_OR_POP"] = function(vm, args)
         local b = vm_top(vm)
         if isCondFalse(b) then
             vm.PC = vm.Prog.LabelSet[args[1]]
@@ -559,29 +524,37 @@ local table_instructions = {
         end
     end,
 
-    ["CALL"] = function (vm, args)
+    ["CALL"] = function(vm, args)
         local n_args = tonumber(args[1])
         local f_args = {}
-        for _ = 1, n_args do
-            table.insert(f_args,vm_pop(vm))
+        for pos = n_args, 1, -1 do  -- temos colocar de trás para frente
+            f_args[pos] = vm_pop(vm)
         end
         local f = vm_pop(vm)
 
-        call(vm,f,f_args)
+        call(vm, f, f_args)
         vm.PC = vm.PC + 1
     end,
 
-    ["POP"] = function (vm, args)
+    ["POP"] = function(vm, args)
         for _ = 1, tonumber(args[1]) do
             vm_pop(vm)
         end
         vm.PC = vm.PC + 1
-
     end,
 
-    ["EXIT"] = function ()
+    ["EXIT"] = function()
         print("EXITING PROGRAM EXEC")
         os.exit(1)
+    end,
+
+    -- EXTRAS
+    ["DUP"] = function(vm, args)
+        local n = tonumber(args[1])
+        for i = 1, n do
+            vm_push(vm, vm_top(vm))
+        end
+        vm.PC = vm.PC + 1
     end
 
 }
@@ -592,7 +565,7 @@ local function run_inst(vm, inst)
     -- this is equivalent to a switch case, i don't know if it's faster than a bazillion ifs
     local inst_function = table_instructions[inst[1]]
     local args = inst[2]
-    inst_function(vm,args)
+    inst_function(vm, args)
 end
 
 
@@ -605,5 +578,12 @@ local function run_vm(vm)
         run_inst(vm, inst)
     end
 end
+
+VM = {
+    Stack = {},
+    PC = 1,
+    Prog = read_program(),
+    Globals = GlobalEnv
+}
 
 run_vm(VM)
