@@ -19,6 +19,10 @@ local function makeValString(str)
     return { Tag = "VALSTR", Val = str }
 end
 
+local function makeValLibFunc(func)
+    return { Tag = "VALLIBFUNC", F = func }
+end
+
 local function isCondFalse(runtime)
     return runtime.Tag == "VALNIL" or (runtime.Tag == "VALBOOL" and runtime.Val == false)
 end
@@ -27,6 +31,151 @@ local function isCondTrue(v)
     return not isCondFalse(v)
 end
 
+-- doesn't really work
+local string_rep_table = {
+    ["\\n"] = "\n",
+    ["\\t"] = "\t",
+    ["\\\\"] = "\\",
+
+}
+-- decode strings
+local function prepare_string(str)
+    local s = string.gsub(str,'\\[nt]', string_rep_table) 
+    return s
+end
+
+
+-- funcoes que tratam erros
+local function unbox(runtimeval, tipo)
+    if runtimeval.Tag ~= tipo then
+        error(string.format("funcao esperava : %s recebeu : %s", tipo, runtimeval.Tag))
+    end
+
+    return runtimeval.Val
+end
+
+local function argsize(args, atleast, fname)
+    if #args >= atleast then
+        return true
+    end
+
+    error(string.format("function %s expected %d arguments",fname,atleast))
+end
+
+
+--Separei global env aqui para facilitar modifica-lo
+local GlobalEnv = {
+    ["print"] = makeValLibFunc(
+        function(args)
+            for i = 1, #args do
+                io.write(tostring(args[i].Val))
+                if i < #args then
+                    io.write(" ")
+                end
+            end
+            io.write("\n")
+            return makeValNil()
+        end
+    ),
+
+    ["tostring"] = makeValLibFunc( -- isso é levemente ineficiente pois pode dar tostring("em uma string")
+        function(args)
+            argsize(args, 1, "tostring")
+            if args[1].Tag == "VALTBL" then
+                return makeValString(tostring(args[1]))
+            elseif args[1].Tag == "VALLUAFUNC" or args[1].Tag == "VALLIBFUNC" then
+                return makeValString("function in " .. tostring(args[1]))
+            end
+
+            return makeValString(tostring(args[1].Val))
+        end
+    ),
+
+    ["error"] = makeValLibFunc(
+        function(args)
+            if #args >= 1 then
+                error(tostring(args[1].Val))
+            end
+            error()
+            return makeValNil()
+        end
+    ),
+
+    ["io"] = makeValTbl({ -- tabela IO
+        ["write"] = makeValLibFunc(
+            function(args)
+                if #args > 0 then
+                    io.write(tostring(args[1].Val))
+                end
+                return makeValNil() -- geralmente retorna o ponteiro para a file, nao aqui
+            end
+        ),
+
+        ["read"] = makeValLibFunc(
+            function(nchars)
+                local c
+                local n = 1
+                if #nchars > 1 then
+                    n = unbox(nchars[1], "VALINT")
+                end
+                c = io.read(n)
+                if c == nil then
+                    return makeValNil()
+                end
+                return makeValString(c)
+            end
+        )
+    }),
+
+    ["math"] = makeValTbl({
+        ["sqrt"] = makeValLibFunc(
+            function (args)
+                argsize(args, 1, "math.sqrt")
+                local n = unbox(args[1], "VALINT")
+                return makeValInt(math.sqrt(n))
+            end
+        )
+    }),
+
+
+    ["string"] = makeValTbl(
+        {
+            ["len"] = makeValLibFunc(
+                function(args)
+                    argsize(args, 1, "string.len")
+                    local s = unbox(args[1], "VALSTR")
+                    return makeValInt(string.len(s))
+                end
+            ),
+
+            ["sub"] = makeValLibFunc(
+                function(args)
+                    argsize(args, 3, "string.sub")
+                    local str  = unbox(args[1], "VALSTR")
+                    local i, j = unbox(args[2], "VALINT"), unbox(args[3], "VALINT")
+                    return makeValInt(string.sub(str, i, j))
+                end
+            ),
+
+            ["char"] = makeValLibFunc(
+                function(args)
+                    argsize(args, 1, "string.char")
+                    local n = unbox(args[1], "VALINT")
+                    return makeValString(string.char(n))
+                end
+            ),
+
+            ["byte"] = makeValLibFunc(
+                function(args)
+                    argsize(args, 1, "string.byte")
+                    local s = unbox(args[1], "VALSTR")
+                    return makeValString(string.byte(s))
+                end
+            ),
+
+        }
+    )
+}
 
 
 -- READING AND EXECUTING COMPILED CODE
@@ -38,18 +187,25 @@ end
 
 -- returns instruction or label str if label
 local function read_line(line)
-    local pattern = "^%s*(%S+)%s*(%S*)%s*(%S*)%s*$"
-    local first_tok, second_tok, third_tok = string.match(line, pattern)
-    if string.sub(first_tok, -1, -1) == ":" then
-        return nil, string.sub(first_tok, 1, -2)
-    end
+    -- eh push string?
+    local first_tok, second_tok, third_tok
+    local is_push_str = string.find(line,"PUSH_STRING")
 
-    if first_tok == "PUSH_STRING" then
+    if is_push_str then
         local first_quotes = string.find(line, '"')
         if not first_quotes then error("didn't find beginning of string") end
         local last_quotes = string.find(string.reverse(line), '"')
         second_tok = string.sub(line, first_quotes + 1, string.len(line) - last_quotes)
+        return makeInst("PUSH_STRING", {second_tok})
     end
+
+    local pattern = "^%s*(%S+)%s*(%S*)%s*(%S*)%s*$"
+    first_tok, second_tok, third_tok = string.match(line, pattern)
+    
+    if string.sub(first_tok, -1, -1) == ":" then
+        return nil, string.sub(first_tok, 1, -2)
+    end
+
 
     local args = { second_tok, third_tok }
     return makeInst(first_tok, args)
@@ -75,11 +231,13 @@ local function read_program()
 end
 
 
+
+
 VM = {
     Stack = {},
     PC = 1,
     Prog = read_program(),
-    Globals = {}
+    Globals = GlobalEnv
 }
 
 local inspect = require("inspect")
@@ -105,8 +263,15 @@ local function vm_push(vm, val)
     table.insert(vm.Stack, val)
 end
 
-local function call(f, args)
-    error("nao implementado ainda")
+local function call(vm, f, args)
+    if f.Tag == "VALLIBFUNC" then
+        local ret = f.F(args)
+        if ret.Tag ~= "VALNIL" then
+            vm_push(vm,ret)
+        end
+    else
+        error("nao implementado ainda")
+    end
 end
 
 -- fazer um switch-case pode ser mais rápido que o usual!
@@ -137,7 +302,7 @@ local table_instructions = {
 
     ["PUSH_STRING"] = function(vm, args)
         -- still need to parse string correctly
-        vm_push(vm, makeValString(args[1]))
+        vm_push(vm, makeValString(prepare_string(args[1])))
         vm.PC = vm.PC + 1
 
     end,
@@ -402,7 +567,8 @@ local table_instructions = {
         end
         local f = vm_pop(vm)
 
-        call(f,f_args)
+        call(vm,f,f_args)
+        vm.PC = vm.PC + 1
     end,
 
     ["POP"] = function (vm, args)
@@ -413,7 +579,7 @@ local table_instructions = {
 
     end,
 
-    ["EXIT"] = function (vm)
+    ["EXIT"] = function ()
         print("EXITING PROGRAM EXEC")
         os.exit(1)
     end
@@ -441,4 +607,3 @@ local function run_vm(vm)
 end
 
 run_vm(VM)
-print(inspect(VM))

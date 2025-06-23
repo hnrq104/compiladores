@@ -1182,9 +1182,12 @@ local function PUSH_NUMBER(n)
 end
 
 
+-- this doesn't really work right
 local string_rep_table = {
     ["\n"] = "\\n",
     ["\t"] = "\\t",
+    ["\\"] = "\\\\",
+
 }
 
 local function PUSH_STRING(str)
