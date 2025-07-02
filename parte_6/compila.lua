@@ -1610,6 +1610,13 @@ local function newLabel()
     return lbl
 end
 
+FUNCTION_NUMBER = 0
+local function newFunction()
+    local f_lbl = "F" .. tostring(FUNCTION_NUMBER)
+    FUNCTION_NUMBER = FUNCTION_NUMBER + 1
+    return f_lbl
+end
+
 local function isBinopOp(exp, op)
     return exp.Tag == "EXPBINOP" and exp.Op == op
 end
