@@ -1155,30 +1155,176 @@ end
 
 
 
+-- Tava bonitinho funcional,
+-- mas agora para separar as funções seria terrível
+-- mudar literalmetne todas as funções dessa parte e colocar um argumento a mais
+-- vamos só nos preocupar com isso durante a criação de funções, estamos sujando o código mas tudo bem
+
+-- CONTADOR DE LABEL
+local LBL_NUMBER = 1
+local function newLabel()
+    local lbl = "L" .. tostring(LBL_NUMBER)
+    LBL_NUMBER = LBL_NUMBER + 1
+    return lbl
+end
+
+-- CONTADOR DE FUNÇÕES
+-- code object
+local CODE = {
+    Fns = { { N_Args = 0 } }, -- F1
+    Stack = { 1 }
+}
+
+local function pushNewFunction(n_args)
+    local stack_size = #CODE.Stack
+    local fn_size = #CODE.Fns
+    CODE.Fns[fn_size + 1] = { N_args = n_args }
+    CODE.Stack[stack_size + 1] = fn_size + 1
+    return fn_size + 1 -- function number
+end
+
+local function newFnLabel(n)
+    return "F" .. tostring(n)
+end
+
+local function popFuncStack()
+    CODE.Stack[#CODE.Stack] = nil
+end
+
+local function writeInstruction(instruction)
+    local stack_top = CODE.Stack[#CODE.Stack]
+    local fn = CODE.Fns[stack_top]
+    fn[#fn + 1] = instruction
+end
+
+-- FUNÇÕES DE AMBIENTE
+-- A ideia é que se você não achar, você deve chamar global pelo nome, então
+-- mantemos somente os ambientes locais
+
+-- vou ter que consertar
+-- basenode de escopo de funcao
+-- nodes normais
+
+--[[
+    Um desenho representando o que vou fazer (dá para ser mais econômico com ponteiros)
+     ____
+    |size|
+    | BN |  --- ...
+    |____|
+
+       ^
+       |          2º Nó         1º Nó  (ordem cronológica)
+     ____          ____          ____
+    |size|  --->  | N2 |  --->  | N1 |
+    | BN |        | VN |        | VN |
+    |____|  <---  |____|        |____|
+       ^                           |
+       | _  _  _  _  _  _  _  _  _ |
+]]
+
+--- Cada function env é representado por um BASENODE (BN) que sempre guarda seu tamanho.
+--- Quando acrescentamos uma variável, adicionamos no início da lista.
+--- Um env, durante a compilação, será um Node, ou um BN ou um VN (VarNode). Quando busca-
+--- mos uma variável, seguimos a ordem cronológica (direita e cima).
+--- Todo VN aponta para o BN que pertence, isso serve para acelerar a inserção de novas variaveis.
 
 
 
+local function AddBaseNode(up_env)
+    return { Tag = "BASENODE", UpEnv = up_env, Size = 0, NextVN = nil }
+end
+
+local function AddVarNode(basenode, varname)
+    basenode.Size = basenode.Size + 1
+    local newnode = {
+        Tag = "VARNODE",
+        BN = basenode,
+        Varname = varname,
+        NextVN = basenode.NextVN,
+        Num = basenode.Size
+    }
+    basenode.NextVN = newnode
+    return basenode.Size, newnode
+end
+
+
+local function search_name_right(varname, varnode)
+    while varnode ~= nil do
+        if varnode.Varname == varname then
+            return varnode.Num
+        end
+        varnode = varnode.NextVN
+    end
+    return nil
+end
+
+-- para consertar isso, buscamos de trás para frente numa lista, não em uma hash table
+local function getVarNumber(varname, node)
+    local n_jump, n_var = 0
+    if node.Tag == "VARNODE" then
+        n_var = search_name_right(varname, node)
+        if n_var then
+            return n_jump, n_var
+        end
+    end
+
+    n_jump = n_jump + 1
+    local basenode = node.BN.UpEnv
+    while basenode ~= nil do
+        if basenode.NextVN then
+            n_var = search_name_right(basenode.NextVN, varname)
+            if n_var then
+                return n_jump, n_var
+            end
+        end
+
+        n_jump = n_jump + 1
+        basenode = basenode.UpEnv
+    end
+    return nil
+end
+
+local function addVar(varname, env)
+    if env.Tag == "BASENODE" then
+        return AddVarNode(env, varname)
+    else -- env.Tag == "LOCALNODE"
+        return AddVarNode(env.BN, varname)
+    end
+end
+
+local function newFunctionEnv(up_env_node)
+    if up_env_node.Tag == "VARNODE" then
+        return AddBaseNode(up_env_node.BN)
+    else -- up_env_node == "BASENODE"
+        return AddBaseNode(up_env_node)
+    end
+end
+
+--- FUNCOES AUXILIARES DA AVALIACAO
+local function genError(msg)
+    error(msg)
+end
 
 
 
 -- INSTRUCOES
 -- literais simples
 local function PUSH_NIL()
-    io.write('\tPUSH_NIL\n')
+    writeInstruction('\tPUSH_NIL\n')
 end
 
 local function PUSH_BOOL(b)
     if b == true then
-        io.write('\tPUSH_TRUE\n')
+        writeInstruction('\tPUSH_TRUE\n')
     end
     if b == false then
-        io.write('\tPUSH_FALSE\n')
+        writeInstruction('\tPUSH_FALSE\n')
     end
 end
 
 local function PUSH_NUMBER(n)
     local n_str = tostring(n)
-    io.write('\tPUSH_NUMBER ' .. n_str .. '\n')
+    writeInstruction('\tPUSH_NUMBER ' .. n_str .. '\n')
 end
 
 
@@ -1193,222 +1339,191 @@ local string_rep_table = {
 local function PUSH_STRING(str)
     -- POR ENQUANTO TÁ ASSIM TENHO QUE DESESCAPAR OS CARACTERES
     -- VOU RESOLVER SUJAMENTE AGORA USANDO G:SUB PQ É MAIS FÁCILS
-    str = string.gsub(str,'[\\\n\t]', string_rep_table)
-    io.write('\tPUSH_STRING "' .. str .. '"\n')
+    str = string.gsub(str, '[\\\n\t]', string_rep_table)
+    writeInstruction('\tPUSH_STRING "' .. str .. '"\n')
+end
+
+
+local function PUSH_CLOSURE(flabel)
+    writeInstruction('\tPUSH_CLOSURE ' .. flabel .. '\n')
 end
 
 -- operacoes com tabela
 local function NEW_TABLE()
-    io.write('\tNEW_TABLE\n')
+    writeInstruction('\tNEW_TABLE\n')
 end
 
 local function GET_TABLE()
-    io.write('\tGET_TABLE\n')
+    writeInstruction('\tGET_TABLE\n')
 end
 
 local function SET_TABLE()
-    io.write('\tSET_TABLE\n')
+    writeInstruction('\tSET_TABLE\n')
 end
 
 -- variaveis globais
 local function GET_GLOBAL(name)
-    io.write('\tGET_GLOBAL ' .. name .. '\n')
+    writeInstruction('\tGET_GLOBAL ' .. name .. '\n')
 end
 
 local function SET_GLOBAL(name)
-    io.write('\tSET_GLOBAL ' .. name .. '\n')
+    writeInstruction('\tSET_GLOBAL ' .. name .. '\n')
 end
 
 local function GET_LOCAL(jumps, nvar)
-    io.write('\tGET_LOCAL ' .. tostring(jumps) .. ' ' .. tostring(nvar) ..  '\n')
+    writeInstruction('\tGET_LOCAL ' .. tostring(jumps) .. ' ' .. tostring(nvar) .. '\n')
 end
 
 local function SET_LOCAL(jumps, nvar)
-    io.write('\tSET_LOCAL ' .. tostring(jumps) .. ' ' .. tostring(nvar) ..  '\n')
+    writeInstruction('\tSET_LOCAL ' .. tostring(jumps) .. ' ' .. tostring(nvar) .. '\n')
 end
 
-   
+
 -- operadores unarios
 local function NEG()
-    io.write('\tNEG\n')
+    writeInstruction('\tNEG\n')
 end
 
 local function LEN()
-    io.write('\tLEN\n')
+    writeInstruction('\tLEN\n')
 end
 
 local function NOT()
-    io.write('\tNOT\n')
+    writeInstruction('\tNOT\n')
 end
 
 -- operadores binarios
 
 local function ADD()
-    io.write('\tADD\n')
+    writeInstruction('\tADD\n')
 end
 
 local function SUB()
-    io.write('\tSUB\n')
+    writeInstruction('\tSUB\n')
 end
 
 local function MUL()
-    io.write('\tMUL\n')
+    writeInstruction('\tMUL\n')
 end
 
 local function DIV()
-    io.write('\tDIV\n')
+    writeInstruction('\tDIV\n')
 end
 
 local function MOD()
-    io.write('\tMOD\n')
+    writeInstruction('\tMOD\n')
 end
 
 local function CONCAT()
-    io.write('\tCONCAT\n')
+    writeInstruction('\tCONCAT\n')
 end
 
 local function EQ()
-    io.write('\tEQ\n')
+    writeInstruction('\tEQ\n')
 end
 
 local function NEQ()
-    io.write('\tNEQ\n')
+    writeInstruction('\tNEQ\n')
 end
 
 local function LT()
-    io.write('\tLT\n')
+    writeInstruction('\tLT\n')
 end
 
 local function LEQ()
-    io.write('\tLEQ\n')
+    writeInstruction('\tLEQ\n')
 end
 
 local function GT()
-    io.write('\tGT\n')
+    writeInstruction('\tGT\n')
 end
 
 local function GEQ()
-    io.write('\tGEQ\n')
+    writeInstruction('\tGEQ\n')
 end
 
 local function POW()
-    io.write('\tPOW\n')
+    writeInstruction('\tPOW\n')
 end
 
 -- desvios
 local function JUMP(label)
-    io.write('\tJUMP ' .. label .. '\n')
+    writeInstruction('\tJUMP ' .. label .. '\n')
 end
 
 local function JUMP_TRUE(label)
-    io.write('\tJUMP_TRUE ' .. label .. '\n')
+    writeInstruction('\tJUMP_TRUE ' .. label .. '\n')
 end
 
 local function JUMP_FALSE(label)
-    io.write('\tJUMP_FALSE ' .. label .. '\n')
+    writeInstruction('\tJUMP_FALSE ' .. label .. '\n')
 end
 
 -- pula sem comer condicional
 local function JUMP_TRUE_OR_POP(label)
-    io.write('\tJUMP_TRUE_OR_POP ' .. label .. '\n')
+    writeInstruction('\tJUMP_TRUE_OR_POP ' .. label .. '\n')
 end
 
 local function JUMP_FALSE_OR_POP(label)
-    io.write('\tJUMP_FALSE_OR_POP ' .. label .. '\n')
+    writeInstruction('\tJUMP_FALSE_OR_POP ' .. label .. '\n')
 end
 
 -- chamadas de funcao
 local function CALL(n_args, n_ret) -- n ret talvez?
     local n_args_str = tostring(n_args)
     local n_ret_str = tostring(n_ret)
-    io.write('\tCALL ' .. n_args_str ..' '.. n_ret_str .. '\n')
+    writeInstruction('\tCALL ' .. n_args_str .. ' ' .. n_ret_str .. '\n')
 end
 
 -- outros
 local function POP(n)
     local n_str = tostring(n)
-    io.write('\tPOP ' .. n_str .. '\n')
+    writeInstruction('\tPOP ' .. n_str .. '\n')
 end
 
--- TROCA O TOPO DA PILHA COM O IMEDIATAMENTE ABAIXO
--- não seria um problema se tivessemos registradores
-local function SWAP()
-    io.write('\tSWAP\n')
+-- ENCAP é encapsulate
+local function ENCAP_LOCAL(n_jump, n_var)
+    writeInstruction('\tENCAP_LOCAL ' .. tostring(n_jump) .. ' ' .. tostring(n_var) .. '\n')
+end
+
+local function ENCAP_TBLSET()
+    writeInstruction('\tENCAP_TBLSET\n')
+end
+
+local function ENCAP_GLOBAL(globalname)
+    writeInstruction('\tENCAP_GLOBAL ' .. globalname .. '\n')
+end
+
+
+local function SETLIST(n)
+    local n_str = tostring(n)
+    writeInstruction('\tSETLIST ' .. n_str .. '\n')
 end
 
 local function EXIT()
-    io.write('\tEXIT\n')
+    writeInstruction('\tEXIT\n')
 end
 
 local function DUP(n)
     local n_str = tostring(n)
-    io.write('\tDUP ' .. n_str .. '\n')
-end
-
-
-
-
-
-
---- FUNCOES AUXILIARES DA AVALIACAO
-
-local function genError(msg)
-    error(msg)
-end
-
--- FUNÇÕES DE AMBIENTE
--- A ideia é que se você não achar, você deve chamar global pelo nome, então 
--- mantemos somente os ambientes locais
-
-local function makeLocalEnvNode(up_env)
-    return { LocalVars = {}, UpEnv = up_env }
-end
-
-
--- queria que fosse um pouco mais rapido, mas considere
---[[
-    local a = 1
-    local function f() print(a) end
-    local a = 2
-]]
-
--- para consertar isso, buscamos de trás para frente numa lista, não em uma hash table
-local function getVarNumber(varname, env)
-    local n_jump = 0
-    while env ~= nil do
-        for n_var = #env.LocalVars, 1, -1 do
-            if env.LocalVars[n_var] == varname then
-                return n_jump, n_var
-            end
-        end
-        env = env.UpEnv
-        n_jump = n_jump + 1
-    end
-    return nil
-end
-
-local function addVar(varname, env)
-    local pos = #env.LocalVars + 1
-    env.LocalVars[pos] = varname
-    return pos
+    writeInstruction('\tDUP ' .. n_str .. '\n')
 end
 
 
 --- GEN BYTE CODE FUNCTIONS
-local genCodeExp, evalCmdCall, genCodeCmd
-local genOr, genAnd
-
--- local function evalFirst(exp, env)
---     return getSingle(evalExp(exp, env))
--- end
+local genCodeExp, genCodeCmd
+local genOr, genAnd 
+local genClosure, genReturn
 
 
 
 local function genTblConst(exptbl, env)
     NEW_TABLE()
     local unnumbered_field = 1
+    if #exptbl.Fields > 0 then
+        DUP(#exptbl.Fields)
+    end
     for i = 1, #exptbl.Fields do
-        DUP(1)
         local f = exptbl.Fields[i]
         if f.ExpKey then
             genCodeExp(f.ExpKey, env)
@@ -1439,10 +1554,11 @@ end
 local inspect = require("inspect")
 
 local function genCompleteNil(n_nils)
-    for i = 1, n_nils do
+    for _ = 1, n_nils do
         PUSH_NIL()
     end
 end
+
 
 -- SHOULD DO A SWITCH
 function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
@@ -1455,6 +1571,11 @@ function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
 
     if expected_ret > 1 then -- ISSO AQUI PARECE UMA SUJEIRA, E É.
         genCompleteNil(expected_ret - 1)
+    end
+
+    if exp.Tag == "EXPLUAFUNC" then
+        genClosure(exp, env)
+        return
     end
 
     if exp.Tag == "EXPNAME" then
@@ -1476,7 +1597,7 @@ function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
         PUSH_NUMBER(exp.Value)
         return
     end
-    
+
     if exp.Tag == "EXPBOOL" then
         PUSH_BOOL(exp.Value)
         return
@@ -1602,27 +1723,12 @@ function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
     genError(string.format("Could not gen exp %s", tostring(inspect(exp))))
 end
 
--- CONTADOR DE LABEL
-LBL_NUMBER = 1
-local function newLabel()
-    local lbl = "L" .. tostring(LBL_NUMBER)
-    LBL_NUMBER = LBL_NUMBER + 1
-    return lbl
-end
-
-FUNCTION_NUMBER = 0
-local function newFunction()
-    local f_lbl = "F" .. tostring(FUNCTION_NUMBER)
-    FUNCTION_NUMBER = FUNCTION_NUMBER + 1
-    return f_lbl
-end
-
 local function isBinopOp(exp, op)
     return exp.Tag == "EXPBINOP" and exp.Op == op
 end
 
 local function writeLabel(lbl)
-    io.write(lbl .. ':\n')
+    writeInstruction(lbl .. ':\n')
 end
 
 function genOr(exp, env, lbl_t, lbl_f)
@@ -1630,9 +1736,9 @@ function genOr(exp, env, lbl_t, lbl_f)
     genCodeExp(exp.Exp1, env, newlbl, nil)
     JUMP_TRUE_OR_POP(newlbl)
     if isBinopOp(exp.Exp2, "AND") then
-        genCodeExp(exp.Exp2, env,  lbl_f, newlbl)
+        genCodeExp(exp.Exp2, env, lbl_f, newlbl)
     else
-        genCodeExp(exp.Exp2, env,  newlbl, lbl_f)
+        genCodeExp(exp.Exp2, env, newlbl, lbl_f)
     end
     if not lbl_t then writeLabel(newlbl) end
 end
@@ -1642,19 +1748,18 @@ function genAnd(exp, env, lbl_t, lbl_f)
     genCodeExp(exp.Exp1, env, nil, newlbl)
     JUMP_FALSE_OR_POP(newlbl)
     if isBinopOp(exp.Exp2, "OR") then
-        genCodeExp(exp.Exp2, env,  newlbl, lbl_t)
+        genCodeExp(exp.Exp2, env, newlbl, lbl_t)
     else
-        genCodeExp(exp.Exp2, env,  lbl_t, newlbl)
+        genCodeExp(exp.Exp2, env, lbl_t, newlbl)
     end
 
     if not lbl_f then writeLabel(newlbl) end
 end
 
-
 -- Ruim por enquanto, depois devo consertar para não fazer o jump (acho que ja sei como)
 local function genJmp(exp, env, lbl_t, lbl_f)
     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
-        genJmp(exp, env, lbl_f,lbl_t)
+        genJmp(exp, env, lbl_f, lbl_t)
         return
     end
     genCodeExp(exp, env)
@@ -1678,6 +1783,7 @@ end
 local function genWhile(cmdwhile, env)
     local lblock = newLabel()
     local lcond = newLabel()
+    -- local lend = newLabel()
 
     JUMP(lcond)
     writeLabel(lblock)
@@ -1687,73 +1793,101 @@ local function genWhile(cmdwhile, env)
 end
 
 
+-- vou ter que trocar, mas já sei de uma forma melhor, encapsular
 
 local function genSet(cmd, env)
     local needed_variables = #cmd.ExpSetList
     local val_size = #cmd.ExpValList
+
+    local last = 0
+    if val_size < needed_variables then
+        genCodeExp(cmd.ExpValList[val_size], env, nil, nil, needed_variables - val_size + 1)
+        last = 1 -- we already computed the last value
+    end
+
+    for i = val_size - last, 1, -1 do
+        genCodeExp(cmd.ExpValList[i], env)
+    end
+
+    -- check if we need a set list or not
+    local hasTblIndex = false
     for i = 1, needed_variables do
-        local set = cmd.ExpSetList[i]
-        if i < val_size then
-            genCodeExp(cmd.ExpValList[i],env)       
-        elseif i == val_size then
-            genCodeExp(cmd.ExpValList[i],env,nil,nil, needed_variables - i + 1)
+        if cmd.ExpSetList[i].Tag == "EXPTBLINDEX" then
+            hasTblIndex = true
+            break
         end
+    end
 
-        -- idealmente temos registradores para guardar table e indice,
-        -- podemos separar em casos mais finos, que nem havia implementado antes
-        -- mas vamos simplificar o código e usar swaps para tabelas.
-
-        if set.Tag == "EXPTBLINDEX" then
-            genCodeExp(set.Table, env)
-            SWAP()
-            genCodeExp(set.Index, env)
-            SWAP()
-            SET_TABLE()
-        else -- set.Tag == "EXPNAME"
+    if hasTblIndex then
+        for i = needed_variables, 1, -1 do
+            local set = cmd.ExpSetList[i]
+            if set.Tag == "EXPTBLINDEX" then
+                genCodeExp(set.Table, env)
+                genCodeExp(set.Index, env)
+                ENCAP_TBLSET()
+            else -- expname
+                local n_jump, n_var = getVarNumber(set.Value, env)
+                if n_jump then
+                    ENCAP_LOCAL(n_jump, n_var)
+                else
+                    ENCAP_GLOBAL(set.Value)
+                end
+            end
+        end
+        SETLIST(needed_variables)
+    else
+        -- everything is a name
+        for i = 1, needed_variables do
+            local set = cmd.ExpSetList[i]
             local n_jump, n_var = getVarNumber(set.Value, env)
             if n_jump then
-                SET_LOCAL(n_jump,n_var)
+                SET_LOCAL(n_jump, n_var)
             else
                 SET_GLOBAL(set.Value)
             end
         end
-
     end
 
-    -- rest of the values that weren't used
-    for i = needed_variables + 1, val_size do
-        genCodeExp(cmd.ExpValList[i],env)
-        POP(1)
+    -- pop valores desnecessarios
+    if needed_variables < val_size then
+        POP(val_size - needed_variables)
     end
-
 end
 
 
 local function genLocalSet(cmd, env)
     local needed_variables = #cmd.Names
     local val_size = #cmd.ExpValList
+
+    local last = 0
+    if val_size < needed_variables then
+        genCodeExp(cmd.ExpValList[val_size], env, nil, nil, needed_variables - val_size + 1)
+        last = 1 -- we already computed the last value
+    end
+
+    for i = val_size - last, 1, -1 do
+        genCodeExp(cmd.ExpValList[i], env)
+    end
+
+    local new_env = env
     for i = 1, needed_variables do
-        local pos = addVar(cmd.Names[i], env)
-        if i < val_size then
-            genCodeExp(cmd.ExpValList[i],env)
-
-        elseif i == val_size then
-            genCodeExp(cmd.ExpValList[i],env,nil,nil, needed_variables - i + 1)
-        end
-        SET_LOCAL(0,pos)
+        local pos
+        pos, new_env = addVar(cmd.Names[i], new_env)
+        SET_LOCAL(0, pos)
     end
 
-    -- rest of the values that weren't used
-    for i = needed_variables + 1, val_size do
-        genCodeExp(cmd.ExpValList[i],env)
-        POP(1)
+    -- pop valores desnecessarios
+    if needed_variables < val_size then
+        POP(val_size - needed_variables)
     end
 
+    genCodeCmd(cmd.Block, new_env)
 end
 
-function genCodeCmd(cmd,env)
+function genCodeCmd(cmd, env)
     if cmd.Tag == "CMDRETURN" then
-        genError("ainda nao implementado")
+        genReturn(cmd, env)
+        return
     end
 
     if cmd.Tag == "CMDSETLIST" then
@@ -1768,7 +1902,6 @@ function genCodeCmd(cmd,env)
 
     if cmd.Tag == "CMDLOCALSET" then
         genLocalSet(cmd, env)
-        genCodeCmd(cmd.Block, env)
         return
     end
 
@@ -1781,7 +1914,6 @@ function genCodeCmd(cmd,env)
     if cmd.Tag == "CMDWHILE" then
         genWhile(cmd, env)
         return
-        -- genError("ainda nao implementado")
     end
 
 
@@ -1797,8 +1929,26 @@ function genCodeCmd(cmd,env)
     genError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
 
+function genClosure(exp, env)
+    -- make new env for function
+    local newenv = newFunctionEnv(env)
+    for i = 1, #exp.Params do
+        _, newenv = addVar(exp.Params[i], newenv)
+    end
+
+    -- push new function to stack
+    local fn = pushNewFunction(#exp.Params)
+    genCodeCmd(exp.CmdBody, newenv)
+    popFuncStack()
+
+    PUSH_CLOSURE(newFnLabel(fn))
+end
+
 -- EXECUCAO
-local f0_env = makeLocalEnvNode(nil)
+local f0_env = AddBaseNode(nil)
 local b = parseBloco(PS)
-genCodeCmd(b,f0_env)
+genCodeCmd(b, f0_env)
 EXIT()
+
+print(table.concat(CODE.Fns[1]))
+print(table.concat(CODE.Fns[2]))
