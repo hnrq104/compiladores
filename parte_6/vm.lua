@@ -211,7 +211,6 @@ local function read_line(line)
     return makeInst(first_tok, args)
 end
 
--- RETURNS PROGRAM LIST WITH LABELS ALREADY TRANSFORMED INTO NUMBERS
 local function read_program()
     local instructions = {}
     local label_set = {}
@@ -219,11 +218,13 @@ local function read_program()
 
     local line = io.read("l")
     while line do
-        local inst, label = read_line(line)
-        if label then
-            label_set[label] = #instructions + 1
-        else -- its an instruction
-            instructions[#instructions + 1] = inst
+        if string.len(line) > 0 then
+            local inst, label = read_line(line)
+            if label then
+                label_set[label] = #instructions + 1
+            else -- its an instruction
+                instructions[#instructions + 1] = inst
+            end
         end
         line = io.read("l")
     end
@@ -308,7 +309,6 @@ local table_instructions = {
         vm.PC = vm.PC + 1
     end,
 
-
     -- TABLES
     ["NEW_TABLE"] = function(vm)
         vm_push(vm, makeValTbl({}))
@@ -369,7 +369,6 @@ local table_instructions = {
         vm_push(vm, makeValBool(not isCondTrue(a)))
         vm.PC = vm.PC + 1
     end,
-
 
     -- Binarias
     -- a op b
@@ -573,9 +572,7 @@ local table_instructions = {
         end
         vm.PC = vm.PC + 1
     end
-
 }
-
 
 
 local function run_inst(vm, inst)
@@ -584,7 +581,6 @@ local function run_inst(vm, inst)
     local args = inst[2]
     inst_function(vm, args)
 end
-
 
 local function run_vm(vm)
     while true do
@@ -597,13 +593,16 @@ local function run_vm(vm)
 end
 
 Compiled_Prog = read_program()
-Assemled_Prog = assemble_program(Compiled_Prog)
+-- Assemled_Prog = assemble_program(Compiled_Prog)
 
-VM = {
-    Stack = {},
-    PC = 1,
-    Prog = Assemled_Prog,
-    Globals = GlobalEnv
-}
+local inspect = require("inspect")
+print(inspect(Compiled_Prog))
 
-run_vm(VM)
+-- VM = {
+--     Stack = {},
+--     PC = 1,
+--     Prog = Assemled_Prog,
+--     Globals = GlobalEnv
+-- }
+
+-- run_vm(VM)

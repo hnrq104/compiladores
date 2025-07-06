@@ -1178,12 +1178,12 @@ local CODE = {
 local function pushNewFunction(n_args)
     local stack_size = #CODE.Stack
     local fn_size = #CODE.Fns
-    CODE.Fns[fn_size + 1] = { N_args = n_args }
+    CODE.Fns[fn_size + 1] = { N_Args = n_args }
     CODE.Stack[stack_size + 1] = fn_size + 1
     return fn_size + 1 -- function number
 end
 
-local function newFnLabel(n)
+local function FnLabel(n)
     return "F" .. tostring(n)
 end
 
@@ -1260,12 +1260,18 @@ end
 
 -- para consertar isso, buscamos de trás para frente numa lista, não em uma hash table
 local function getVarNumber(varname, node)
-    local n_jump, n_var = 0
+    local n_jump = 0
+    local n_var
     if node.Tag == "VARNODE" then
         n_var = search_name_right(varname, node)
         if n_var then
             return n_jump, n_var
         end
+    end
+
+
+    if not node.BN then
+        return nil
     end
 
     n_jump = n_jump + 1
@@ -1475,6 +1481,10 @@ local function CALL(n_args, n_ret) -- n ret talvez?
     writeInstruction('\tCALL ' .. n_args_str .. ' ' .. n_ret_str .. '\n')
 end
 
+local function RETURN(n_returned)
+    writeInstruction('\tRETURN '..tostring(n_returned)..'\n')
+end
+
 -- outros
 local function POP(n)
     local n_str = tostring(n)
@@ -1561,6 +1571,7 @@ end
 
 
 -- SHOULD DO A SWITCH
+-- Se expected_ret for -1, a o número a retornar é arbitrário
 function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
     expected_ret = expected_ret or 1
 
@@ -1941,7 +1952,30 @@ function genClosure(exp, env)
     genCodeCmd(exp.CmdBody, newenv)
     popFuncStack()
 
-    PUSH_CLOSURE(newFnLabel(fn))
+    PUSH_CLOSURE(FnLabel(fn))
+end
+
+-- o a única coisa que posso fazer é dizer "estou retornando pelo menos x coisas"
+-- pois poderia ter return 1,2, g()
+-- onde g() pode retornar uma quantidade variada de objetos dependendo da execução do código
+
+
+-- SOLUÇÃO
+-- Toda função retorna um objeto RETLIST, que podemos dar UNPACK
+-- A função return diz o tamanho do RETLIST
+-- se uma função nao tiver return, então o RETLIST tem tamanho 0 (mas ele existe!)
+-- se uma função for chamada com expected ret = 0, ai sim, não empilhamos o retlist
+function genReturn(cmd, env)
+    local n_returned = #cmd.ExpRetList
+    if n_returned == 0 then
+        RETURN(0)
+    else
+        genCodeExp(cmd.ExpRetList[n_returned],env, nil, nil, -1) -- -1 here stands for any amount of return 
+        for i = n_returned - 1, 1, -1 do
+            genCodeExp(cmd.ExpRetList[i], env)
+        end
+        RETURN(n_returned)
+    end
 end
 
 -- EXECUCAO
@@ -1950,5 +1984,12 @@ local b = parseBloco(PS)
 genCodeCmd(b, f0_env)
 EXIT()
 
-print(table.concat(CODE.Fns[1]))
-print(table.concat(CODE.Fns[2]))
+
+local function FN_DECLARATION(fn_number)
+    print("FUNCTION "..FnLabel(fn_number).." "..tostring(CODE.Fns[fn_number].N_Args))
+    print(table.concat(CODE.Fns[fn_number]))
+end
+
+for fns = 1, #CODE.Fns do
+    FN_DECLARATION(fns)
+end
