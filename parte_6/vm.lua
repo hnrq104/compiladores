@@ -119,8 +119,8 @@ local function read_program()
 end
 
 local function is_jmp(inst_tag)
-    return inst_tag == "JUMP" or inst_tag == "JUMP_TRUE" or inst_tag == "JUMP_TRUE"
-        or inst_tag == "JUMP_TRUE_OR_POP" or inst_tag == "JUMP_OR_POP"
+    return inst_tag == "JUMP" or inst_tag == "JUMP_TRUE" or inst_tag == "JUMP_FALSE"
+        or inst_tag == "JUMP_TRUE_OR_POP" or inst_tag == "JUMP_FALSE_OR_POP"
 end
 
 local function uses_string(inst_tag)
@@ -546,14 +546,14 @@ local table_instructions = {
     ["EQ"] = function(vm)
         local b = vm_pop(vm)
         local a = vm_pop(vm)
-        vm_push(makeValBool(a.Val == b.Val))
+        vm_push(vm, makeValBool(a.Val == b.Val))
         vm.PC = vm.PC + 1
     end,
 
     ["NEQ"] = function(vm)
         local b = vm_pop(vm)
         local a = vm_pop(vm)
-        vm_push(makeValBool(a.Val ~= b.Val))
+        vm_push(vm, makeValBool(a.Val ~= b.Val))
         vm.PC = vm.PC + 1
     end,
 
@@ -773,7 +773,7 @@ local GlobalEnv = {
                     argsize(args, 3, "string.sub")
                     local str  = unbox(args[1], "VALSTR")
                     local i, j = unbox(args[2], "VALINT"), unbox(args[3], "VALINT")
-                    return makeValInt(string.sub(str, i, j))
+                    return makeValString(string.sub(str, i, j))
                 end
             ),
 
@@ -789,7 +789,7 @@ local GlobalEnv = {
                 function(args)
                     argsize(args, 1, "string.byte")
                     local s = unbox(args[1], "VALSTR")
-                    return makeValString(string.byte(s))
+                    return makeValInt(string.byte(s))
                 end
             ),
 
@@ -805,14 +805,20 @@ local function run_inst(vm, inst)
 end
 
 local function run_vm(vm)
-    while vm.PC <= #vm.Fns[vm.CurrentF][1] do
+    while true do
+        if vm.PC > #vm.Fns[vm.CurrentF][1] then -- function withou return
+            ret(vm, 0)
+        end
         local inst = vm.Fns[vm.CurrentF][1][vm.PC]
+        -- print(vm.CurrentF, vm.PC, inspect(inst))
         run_inst(vm, inst)
     end
 end
 
 Compiled_Prog = read_program()
 Assembled_Prog = assemble_program(Compiled_Prog)
+
+-- print(inspect(Assembled_Prog))
 
 local mainEnv = makeEnv(nil)
 -- VM STARTS RUNNING MAIN

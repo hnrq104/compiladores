@@ -32,7 +32,7 @@ local spaces = { " ", "\t", "\n", "\r" }
 --- IS ALPHANUMERIC
 local function isCharInStr(char, str)
     for i = 1, #str do
-        if char == str:sub(i, i) then return true end
+        if char == string.sub(str,i, i) then return true end
     end
     return false
 end
