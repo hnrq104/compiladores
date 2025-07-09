@@ -985,12 +985,12 @@ end
 
 local function parseReturnCmd(ps)
     comeParser(ps, "RETURN")
-    local explist
+    local explist = {}
     if ps.tokens[1].Tag ~= "END" then
         explist = parseGetExplist(ps)
     end
 
-    if ps.tokens[1].Tag == "END" or ps.tokens[1].Tag == "EOF" then
+    if cmd_enders(ps.tokens[1].Tag) then
         return makeReturnCmd(explist)
     end
 
@@ -1234,7 +1234,7 @@ local function AddBaseNode(up_env)
     return { Tag = "BASENODE", UpEnv = up_env, Size = 0, NextVN = nil }
 end
 
-local function AddVarNode(basenode, varname)
+local function AddVarNode(varname, basenode)
     basenode.Size = basenode.Size + 1
     local newnode = {
         Tag = "VARNODE",
@@ -1262,39 +1262,37 @@ end
 local function getVarNumber(varname, node)
     local n_jump = 0
     local n_var
+    local basenode
     if node.Tag == "VARNODE" then
+        basenode = node.BN
         n_var = search_name_right(varname, node)
         if n_var then
             return n_jump, n_var
         end
+    else
+        basenode = node
     end
 
-
-    if not node.BN then
-        return nil
-    end
-
-    n_jump = n_jump + 1
-    local basenode = node.BN.UpEnv
-    while basenode ~= nil do
+    -- search above
+    while basenode.UpEnv ~= nil do
+        n_jump = n_jump + 1
+        basenode = basenode.UpEnv
         if basenode.NextVN then
-            n_var = search_name_right(basenode.NextVN, varname)
+            n_var = search_name_right(varname, basenode.NextVN)
             if n_var then
                 return n_jump, n_var
             end
         end
-
-        n_jump = n_jump + 1
-        basenode = basenode.UpEnv
     end
+
     return nil
 end
 
 local function addVar(varname, env)
     if env.Tag == "BASENODE" then
-        return AddVarNode(env, varname)
+        return AddVarNode(varname, env)
     else -- env.Tag == "LOCALNODE"
-        return AddVarNode(env.BN, varname)
+        return AddVarNode(varname, env.BN)
     end
 end
 
@@ -1350,8 +1348,8 @@ local function PUSH_STRING(str)
 end
 
 
-local function PUSH_CLOSURE(flabel)
-    writeInstruction('\tPUSH_CLOSURE ' .. flabel .. '\n')
+local function CLOSURE(flabel)
+    writeInstruction('\tCLOSURE ' .. flabel .. '\n')
 end
 
 -- operacoes com tabela
@@ -1555,7 +1553,12 @@ end
 local function genCall(expcall, env, expected_ret)
     genCodeExp(expcall.F, env)
     for i = #expcall.Args, 1, -1 do
-        genCodeExp(expcall.Args[i], env)
+        local exp_arg = expcall.Args[i]
+        if i == #expcall.Args and exp_arg.Tag == "EXPCALL" then
+            genCall(exp_arg, env, -1)
+        else
+            genCodeExp(exp_arg, env)
+        end
     end
     CALL(#expcall.Args, expected_ret)
 end
@@ -1850,7 +1853,9 @@ local function genSet(cmd, env)
         -- everything is a name
         for i = 1, needed_variables do
             local set = cmd.ExpSetList[i]
+
             local n_jump, n_var = getVarNumber(set.Value, env)
+            
             if n_jump then
                 SET_LOCAL(n_jump, n_var)
             else
@@ -1870,14 +1875,20 @@ local function genLocalSet(cmd, env)
     local needed_variables = #cmd.Names
     local val_size = #cmd.ExpValList
 
-    local last = 0
-    if val_size < needed_variables then
-        genCodeExp(cmd.ExpValList[val_size], env, nil, nil, needed_variables - val_size + 1)
-        last = 1 -- we already computed the last value
-    end
-
-    for i = val_size - last, 1, -1 do
-        genCodeExp(cmd.ExpValList[i], env)
+    if val_size > 0 then
+        local last = 0
+        if val_size < needed_variables then
+            genCodeExp(cmd.ExpValList[val_size], env, nil, nil, needed_variables - val_size + 1)
+            last = 1 -- we already computed the last value
+        end
+        
+        for i = val_size - last, 1, -1 do
+            genCodeExp(cmd.ExpValList[i], env)
+        end
+    else
+        for _ = 1, needed_variables do
+            PUSH_NIL()
+        end
     end
 
     local new_env = env
@@ -1927,7 +1938,6 @@ function genCodeCmd(cmd, env)
         return
     end
 
-
     if cmd.Tag == "CMDBLOCK" then
         for i = 1, #cmd.Cmds do
             local ret = genCodeCmd(cmd.Cmds[i], env)
@@ -1936,9 +1946,9 @@ function genCodeCmd(cmd, env)
         return
     end
 
-
     genError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
+
 
 function genClosure(exp, env)
     -- make new env for function
@@ -1952,7 +1962,7 @@ function genClosure(exp, env)
     genCodeCmd(exp.CmdBody, newenv)
     popFuncStack()
 
-    PUSH_CLOSURE(FnLabel(fn))
+    CLOSURE(FnLabel(fn))
 end
 
 -- o a única coisa que posso fazer é dizer "estou retornando pelo menos x coisas"

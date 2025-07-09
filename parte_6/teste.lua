@@ -1,12 +1,13 @@
-
-A = 1
-B = 2
-
-
-local function f()
-    local function g(a,b)
-        return a + b, 3
-    end
-    A = 100
-    return true, g(), false
+local function i()
+    return 1,2
 end
+
+local function h()
+    return 3,4, i()
+end
+
+local function g()
+    return 5,6 , h()
+end
+
+print(g())
