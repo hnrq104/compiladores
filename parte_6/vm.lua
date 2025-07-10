@@ -1,9 +1,10 @@
 -- READING AND ASSEMBLING
 -- INSTRUCTION/LABEL READING
 
+local file_bytecode = assert(io.open(arg[1],"r"), "could not open file " .. arg[1])
+io.input(file_bytecode)
+
 local inspect = require("inspect")
-
-
 
 local string_rep_table = {
     ["\\n"] = "\n",
