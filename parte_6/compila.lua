@@ -900,6 +900,10 @@ local function makeCallCmd(expF, expArgList)
     return { Tag = "CMDCALL", F = expF, Args = expArgList }
 end
 
+local function makeBreakCmd()
+    return {Tag = "CMDBREAK"}
+end
+
 -- novo
 local function makeForCmd(exp_start, index_name, exp_end, exp_step, block)
     -- posso fazer assim, ou posso lembrar que for é um açucar para while NÃO É EM LUA
@@ -1135,10 +1139,16 @@ local function parseCmd(ps)
         return parseLocalCmd(ps)
     end
 
-    -- trab 5
+    -- trab 6
     if ps.tokens[1].Tag == "FOR" then
         return parseForCmd(ps)
     end
+
+    if ps.tokens[1].Tag == "BREAK" then
+        comeParser(ps,"BREAK")
+        return makeBreakCmd()
+    end
+
 
     -- exp sufixiada
     local sufs = parseSufList(ps)
@@ -1195,9 +1205,12 @@ end
 
 -- CONTADOR DE FUNÇÕES
 -- code object
+-- isso aqui é uma maquininha de estados para lidar com funções 
+-- e breaks!
 local CODE = {
     Fns = { { N_Args = 0 } }, -- F1
-    Stack = { 1 }
+    Stack = { 1 },
+    BreakStack = {}
 }
 
 local function pushNewFunction(n_args)
@@ -1220,6 +1233,24 @@ local function writeInstruction(instruction)
     local stack_top = CODE.Stack[#CODE.Stack]
     local fn = CODE.Fns[stack_top]
     fn[#fn + 1] = instruction
+end
+
+local function pushBreak(lbl)
+    CODE.BreakStack[#CODE.BreakStack+1] = lbl
+end
+
+local function topBreak()
+    if #CODE.BreakStack == 0 then
+        print("compilation error: break found outside loop")
+        os.exit(1)
+    end
+    return CODE.BreakStack[#CODE.BreakStack]
+end
+
+local function popBreak()
+    local popped = CODE.BreakStack[#CODE.BreakStack]
+    CODE.BreakStack[#CODE.BreakStack] = nil
+    return popped
 end
 
 -- FUNÇÕES DE AMBIENTE
@@ -1365,11 +1396,30 @@ local string_rep_table = {
 
 }
 
+local function escape_str_especifico(str)
+    local new_str = ""
+    local size = string.len(str)
+
+    local char
+    for i = 1, size do
+        char = string.sub(str,i,i)
+        if char == "\n" then
+            char = "\\n"
+        elseif char == "\t" then
+            char = "\\t"
+        elseif  char == "\\" then
+            char = "\\\\"
+        end
+        new_str = new_str..char
+    end
+    return new_str
+end
+
 local function PUSH_STRING(str)
     -- POR ENQUANTO TÁ ASSIM TENHO QUE DESESCAPAR OS CARACTERES
     -- VOU RESOLVER SUJAMENTE AGORA USANDO G:SUB PQ É MAIS FÁCILS
-    str = string.gsub(str, '[\\\n\t]', string_rep_table)
-    writeInstruction('\tPUSH_STRING "' .. str .. '"\n')
+    -- str = string.gsub(str, '[\\\n\t]', string_rep_table)
+    writeInstruction('\tPUSH_STRING "' .. escape_str_especifico(str) .. '"\n')
 end
 
 
@@ -1543,8 +1593,7 @@ local function DUP(n)
 end
 
 local function ERROR(msg)
-    msg = string.gsub(msg, '[\\\n\t]', string_rep_table)
-    writeInstruction('\tERROR "' .. msg .. '"\n')
+    writeInstruction('\tERROR "' .. escape_str_especifico(msg) .. '"\n')
 end
 
 
@@ -1803,7 +1852,7 @@ end
 -- Ruim por enquanto, depois devo consertar para não fazer o jump (acho que ja sei como)
 local function genJmp(exp, env, lbl_t, lbl_f)
     if exp.Tag == "EXPUNOP" and exp.Op == "NOT" then
-        genJmp(exp, env, lbl_f, lbl_t)
+        genJmp(exp.Exp, env, lbl_f, lbl_t)
         return
     end
     genCodeExp(exp, env)
@@ -1827,18 +1876,28 @@ end
 local function genWhile(cmdwhile, env)
     local lblock = newLabel()
     local lcond = newLabel()
-    -- local lend = newLabel()
+    
+    local lend = newLabel()
+    pushBreak(lend)
 
     JUMP(lcond)
     writeLabel(lblock)
     genCodeCmd(cmdwhile.Block, env)
     writeLabel(lcond)
     genJmp(cmdwhile.ExpCond, env, lblock, nil)
+    
+    writeLabel(lend)
+    popBreak()
 end
 
 local function genFor(cmd, env)
     local l_jump_error = newLabel()
+    
     local lblock, lcond = newLabel(), newLabel()
+    
+    local lend = newLabel()
+    pushBreak(lend)
+    
     local new_env, pos_iter, pos_step, pos_end
 
     pos_iter, new_env = addVar(cmd.IndexName, env)
@@ -1884,6 +1943,8 @@ local function genFor(cmd, env)
     )
     genJmp(bigexp, new_env, lblock, nil)
 
+    writeLabel(lend)
+    popBreak()
     -- acho que é isso aqui.
 end
 
@@ -2032,6 +2093,11 @@ function genCodeCmd(cmd, env)
         genFor(cmd, env)
         return
     end
+    
+    if cmd.Tag == "CMDBREAK" then
+        JUMP(topBreak())
+        return
+    end
 
     genError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
@@ -2082,9 +2148,18 @@ genCodeCmd(b, f0_env)
 EXIT()
 
 
+local function slow_concat(tbl)
+    local str = ""
+    for i = 1, #tbl do
+        str = str .. tbl[i]
+    end
+    return str
+end
+
 local function FN_DECLARATION(fn_number)
     print("FUNCTION "..FnLabel(fn_number).." "..tostring(CODE.Fns[fn_number].N_Args))
-    print(table.concat(CODE.Fns[fn_number]))
+    -- my slow concat
+    print(slow_concat(CODE.Fns[fn_number]))
 end
 
 for fns = 1, #CODE.Fns do
