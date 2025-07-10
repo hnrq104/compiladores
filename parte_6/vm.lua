@@ -35,13 +35,16 @@ local function read_line(line)
     -- eh push string?
     local first_tok, second_tok, third_tok
     local is_push_str = string.find(line, "PUSH_STRING")
+    local is_error = string.find(line,"ERROR")
 
-    if is_push_str then
+    if is_push_str or is_error then
         local first_quotes = string.find(line, '"')
         if not first_quotes then error("didn't find beginning of string") end
         local last_quotes = string.find(string.reverse(line), '"')
         second_tok = string.sub(line, first_quotes + 1, string.len(line) - last_quotes)
-        return { Tag = "INSTRUCTION", Inst = makeInst("PUSH_STRING", { prepare_string(second_tok) }) }
+        local tag = (is_push_str and "PUSH_STRING") or (is_error and "ERROR") 
+
+        return { Tag = "INSTRUCTION", Inst = makeInst(tag, { prepare_string(second_tok) }) }
     end
 
     local pattern = "^%s*(%S+)%s*(%S*)%s*(%S*)%s*$"
@@ -124,7 +127,9 @@ local function is_jmp(inst_tag)
 end
 
 local function uses_string(inst_tag)
-    return inst_tag == "PUSH_STRING" or inst_tag == "SET_GLOBAL" or inst_tag == "GET_GLOBAL"
+    return inst_tag == "PUSH_STRING" or inst_tag == "SET_GLOBAL" or
+        inst_tag == "GET_GLOBAL" or inst_tag == "ENCAP_GLOBAL" or
+        inst_tag == "ERROR"
 end
 
 -- assemble program retorna o programa como instruções de maquina.
@@ -188,6 +193,18 @@ end
 local function makeValReturnList(valList)
     if #valList == 1 then return valList[1] end
     return { Tag = "VALLISTRET", Values = valList }
+end
+
+local function make_LVal_Tbl(tbl, key)
+    return { Tag = "LVALTBL", Tbl = tbl, Index = key}
+end
+
+local function make_LVal_Local(n_jumps, n_var)
+    return { Tag = "LVALLOCAL", N_Jumps = n_jumps, N_Var = n_var}
+end
+
+local function make_LVal_Global(global_name)
+    return { Tag = "LVALGLOBAL", GlobalName = global_name}
 end
 
 --conditionals
@@ -340,6 +357,22 @@ local function ret(vm, f_rets)
     vm_newframe(vm, old_frame[1], old_frame[2], old_frame[3], old_frame[4])
 end
 
+
+local function setlist(vm, sets, values)
+    local n = #sets
+    for i = 1, n do
+        local lval = sets[i]
+        if lval.Tag == "LVALLOCAL" then
+            setLocal(vm.Env, lval.N_Jumps, lval.N_Var, values[i])
+        elseif lval.Tag == "LVALGLOBAL" then
+            vm.Globals[lval.GlobalName] = values[i]
+        else -- lval.Tag == "LVALTBL"
+            lval.Tbl.Val[lval.Index.Val] = values[i]
+        end
+    end
+end
+
+
 -- fazer um switch-case pode ser mais rápido que o usual!
 local table_instructions = {
     -- PUSHS
@@ -378,7 +411,12 @@ local table_instructions = {
     ["GET_TABLE"] = function(vm)
         local key = vm_pop(vm)
         local tbl = vm_pop(vm)
-        vm_push(vm, tbl.Val[key.Val])
+        local v = tbl.Val[key.Val]
+        if v then
+            vm_push(vm, v)
+        else 
+            vm_push(vm, makeValNil())
+        end
         vm.PC = vm.PC + 1
     end,
 
@@ -657,11 +695,49 @@ local table_instructions = {
 
     -- EXTRAS
     ["DUP"] = function(vm, args)
-        local n = tonumber(args[1])
+        local n = args[1]
         for _ = 1, n do
             vm_push(vm, vm_top(vm))
         end
         vm.PC = vm.PC + 1
+    end,
+
+    ["ENCAP_LOCAL"] = function (vm, args)
+        vm_push(vm, make_LVal_Local(args[1],args[2]))
+        vm.PC = vm.PC + 1
+    end,
+
+    ["ENCAP_GLOBAL"] = function (vm, args)
+        vm_push(vm, make_LVal_Global(args[1]))
+        vm.PC = vm.PC + 1
+    end,
+
+    ["ENCAP_TBLSET"] = function (vm)
+        local index = vm_pop(vm)
+        local tbl = vm_pop(vm)
+        vm_push(vm, make_LVal_Tbl(tbl,index))
+        vm.PC = vm.PC + 1
+    end,
+
+    ["SETLIST"] = function (vm, args)
+        local n = args[1]
+        local sets = {}
+        local values = {}
+        for i = 1, n do
+            sets[i] = vm_pop(vm)
+        end
+
+        for i = 1, n do
+            values[i] = vm_pop(vm)
+        end
+
+        setlist(vm, sets, values)
+        vm.PC = vm.PC + 1
+    end,
+
+    ["ERROR"] = function (vm, args)
+        print(string.format("error: %s",args[1]))
+        os.exit(1)
     end
 }
 

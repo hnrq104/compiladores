@@ -902,6 +902,8 @@ end
 
 -- novo
 local function makeForCmd(exp_start, index_name, exp_end, exp_step, block)
+    -- posso fazer assim, ou posso lembrar que for é um açucar para while NÃO É EM LUA
+    
     return {
         Tag = "CMDFOR",
         IndexName = index_name,
@@ -1032,10 +1034,30 @@ local function parseLocalCmd(ps)
     -- local function name ( params ) block end
     if ps.tokens[1].Tag == "FUNCTION" then
         local setlist = parseFunctionDeclaration(ps) --- ISSO AQUI É UMA SUJEIRA PARA FACILITAR, IDEALMENTE NÃO É ASSIM
-        local fname = setlist.ExpSetList[1].Value
+        local fname = setlist.ExpSetList[1]
         local b = parseBloco(ps)
 
-        return makeLocalSetList({ fname }, setlist.ExpValList, b)
+
+        -- açucar sintatico para
+        -- local fname
+        -- fname = function ...
+        -- bloco
+        
+        -- isso é
+        local cmd = makeLocalSetList(
+            { fname.Value },
+            {},
+            makeBlock({
+                -- fname = func
+                makeSetList(
+                        { fname },
+                        setlist.ExpValList
+                ),
+                -- prox bloco
+                b
+            })
+        )
+        return cmd
     end
 
     -- to read names is just to read paramaters :)
@@ -1073,6 +1095,9 @@ local function parseForCmd(ps)
     if ps.tokens[1].Tag == "," then
         advanceParser(ps)
         exp_step = parseExp(ps)
+    end
+    if exp_step == nil then
+        exp_step = makeExpInt(1)
     end
 
     comeParser(ps, "DO")
@@ -1517,6 +1542,11 @@ local function DUP(n)
     writeInstruction('\tDUP ' .. n_str .. '\n')
 end
 
+local function ERROR(msg)
+    msg = string.gsub(msg, '[\\\n\t]', string_rep_table)
+    writeInstruction('\tERROR "' .. msg .. '"\n')
+end
+
 
 --- GEN BYTE CODE FUNCTIONS
 local genCodeExp, genCodeCmd
@@ -1622,12 +1652,12 @@ function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
     end
 
     if exp.Tag == "EXPTBLCONST" then
-        genTblConst(exp)
+        genTblConst(exp, env)
         return
     end
 
     if exp.Tag == "EXPTBLINDEX" then
-        genTblIndex(exp)
+        genTblIndex(exp, env)
         return
     end
 
@@ -1806,6 +1836,57 @@ local function genWhile(cmdwhile, env)
     genJmp(cmdwhile.ExpCond, env, lblock, nil)
 end
 
+local function genFor(cmd, env)
+    local l_jump_error = newLabel()
+    local lblock, lcond = newLabel(), newLabel()
+    local new_env, pos_iter, pos_step, pos_end
+
+    pos_iter, new_env = addVar(cmd.IndexName, env)
+    pos_step, new_env = addVar("1_step", new_env)
+    pos_end, new_env  = addVar("2_stop", new_env)
+
+    genCodeExp(cmd.ExpStep, env)
+    DUP(1)
+    SET_LOCAL(0, pos_step)
+    -- vê se é 0
+    PUSH_NUMBER(0)
+    EQ()
+    JUMP_FALSE(l_jump_error)
+    ERROR("step in for loop equal to 0")
+    writeLabel(l_jump_error)
+
+    -- preenche iterador e end
+    genCodeExp(cmd.ExpStart, env)
+    genCodeExp(cmd.ExpEnd, env)
+    SET_LOCAL(0, pos_end)
+    SET_LOCAL(0, pos_iter)
+
+    JUMP(lcond)
+    writeLabel(lblock)
+    genCodeCmd(cmd.Block, new_env)
+
+    -- iter = iter + step
+    PUSH_NUMBER(1)
+    GET_LOCAL(0, pos_iter)
+    ADD()
+    SET_LOCAL(0, pos_iter)
+
+    -- agora a parte chata do condicional
+    writeLabel(lcond) -- poderia adicionar uma expressão imensa e gerar cond
+    -- algo como (step>0 and iter <= end) or (step < 0 and iter >= end) jump_true lblock
+    local bigexp = makeBinop("OR",
+        makeBinop("AND",
+            makeBinop(">", makeExpName("1_step"), makeExpInt(0)),
+            makeBinop("<=", makeExpName(cmd.IndexName), makeExpName("2_stop"))),
+        makeBinop("AND",
+            makeBinop("<", makeExpName("1_step"), makeExpInt(0)),
+            makeBinop(">=", makeExpName(cmd.IndexName), makeExpName("2_stop")))
+    )
+    genJmp(bigexp, new_env, lblock, nil)
+
+    -- acho que é isso aqui.
+end
+
 
 -- vou ter que trocar, mas já sei de uma forma melhor, encapsular
 
@@ -1906,6 +1987,7 @@ local function genLocalSet(cmd, env)
     genCodeCmd(cmd.Block, new_env)
 end
 
+
 function genCodeCmd(cmd, env)
     if cmd.Tag == "CMDRETURN" then
         genReturn(cmd, env)
@@ -1943,6 +2025,11 @@ function genCodeCmd(cmd, env)
             local ret = genCodeCmd(cmd.Cmds[i], env)
             if ret then return ret end
         end
+        return
+    end
+    
+    if cmd.Tag == "CMDFOR" then
+        genFor(cmd, env)
         return
     end
 
