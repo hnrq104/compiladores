@@ -32,7 +32,7 @@ local spaces = { " ", "\t", "\n", "\r" }
 --- IS ALPHANUMERIC
 local function isCharInStr(char, str)
     for i = 1, #str do
-        if char == string.sub(str,i, i) then return true end
+        if char == string.sub(str, i, i) then return true end
     end
     return false
 end
@@ -901,13 +901,13 @@ local function makeCallCmd(expF, expArgList)
 end
 
 local function makeBreakCmd()
-    return {Tag = "CMDBREAK"}
+    return { Tag = "CMDBREAK" }
 end
 
 -- novo
 local function makeForCmd(exp_start, index_name, exp_end, exp_step, block)
     -- posso fazer assim, ou posso lembrar que for é um açucar para while NÃO É EM LUA
-    
+
     return {
         Tag = "CMDFOR",
         IndexName = index_name,
@@ -1046,7 +1046,7 @@ local function parseLocalCmd(ps)
         -- local fname
         -- fname = function ...
         -- bloco
-        
+
         -- isso é
         local cmd = makeLocalSetList(
             { fname.Value },
@@ -1054,8 +1054,8 @@ local function parseLocalCmd(ps)
             makeBlock({
                 -- fname = func
                 makeSetList(
-                        { fname },
-                        setlist.ExpValList
+                    { fname },
+                    setlist.ExpValList
                 ),
                 -- prox bloco
                 b
@@ -1145,7 +1145,7 @@ local function parseCmd(ps)
     end
 
     if ps.tokens[1].Tag == "BREAK" then
-        comeParser(ps,"BREAK")
+        comeParser(ps, "BREAK")
         return makeBreakCmd()
     end
 
@@ -1205,7 +1205,7 @@ end
 
 -- CONTADOR DE FUNÇÕES
 -- code object
--- isso aqui é uma maquininha de estados para lidar com funções 
+-- isso aqui é uma maquininha de estados para lidar com funções
 -- e breaks!
 local CODE = {
     Fns = { { N_Args = 0 } }, -- F1
@@ -1236,7 +1236,7 @@ local function writeInstruction(instruction)
 end
 
 local function pushBreak(lbl)
-    CODE.BreakStack[#CODE.BreakStack+1] = lbl
+    CODE.BreakStack[#CODE.BreakStack + 1] = lbl
 end
 
 local function topBreak()
@@ -1402,15 +1402,15 @@ local function escape_str_especifico(str)
 
     local char
     for i = 1, size do
-        char = string.sub(str,i,i)
+        char = string.sub(str, i, i)
         if char == "\n" then
             char = "\\n"
         elseif char == "\t" then
             char = "\\t"
-        elseif  char == "\\" then
+        elseif char == "\\" then
             char = "\\\\"
         end
-        new_str = new_str..char
+        new_str = new_str .. char
     end
     return new_str
 end
@@ -1555,7 +1555,7 @@ local function CALL(n_args, n_ret) -- n ret talvez?
 end
 
 local function RETURN(n_returned)
-    writeInstruction('\tRETURN '..tostring(n_returned)..'\n')
+    writeInstruction('\tRETURN ' .. tostring(n_returned) .. '\n')
 end
 
 -- outros
@@ -1599,7 +1599,7 @@ end
 
 --- GEN BYTE CODE FUNCTIONS
 local genCodeExp, genCodeCmd
-local genOr, genAnd 
+local genOr, genAnd
 local genClosure, genReturn
 
 
@@ -1876,7 +1876,7 @@ end
 local function genWhile(cmdwhile, env)
     local lblock = newLabel()
     local lcond = newLabel()
-    
+
     local lend = newLabel()
     pushBreak(lend)
 
@@ -1885,19 +1885,19 @@ local function genWhile(cmdwhile, env)
     genCodeCmd(cmdwhile.Block, env)
     writeLabel(lcond)
     genJmp(cmdwhile.ExpCond, env, lblock, nil)
-    
+
     writeLabel(lend)
     popBreak()
 end
 
 local function genFor(cmd, env)
     local l_jump_error = newLabel()
-    
+
     local lblock, lcond = newLabel(), newLabel()
-    
+
     local lend = newLabel()
     pushBreak(lend)
-    
+
     local new_env, pos_iter, pos_step, pos_end
 
     pos_iter, new_env = addVar(cmd.IndexName, env)
@@ -1997,7 +1997,7 @@ local function genSet(cmd, env)
             local set = cmd.ExpSetList[i]
 
             local n_jump, n_var = getVarNumber(set.Value, env)
-            
+
             if n_jump then
                 SET_LOCAL(n_jump, n_var)
             else
@@ -2023,7 +2023,7 @@ local function genLocalSet(cmd, env)
             genCodeExp(cmd.ExpValList[val_size], env, nil, nil, needed_variables - val_size + 1)
             last = 1 -- we already computed the last value
         end
-        
+
         for i = val_size - last, 1, -1 do
             genCodeExp(cmd.ExpValList[i], env)
         end
@@ -2088,12 +2088,12 @@ function genCodeCmd(cmd, env)
         end
         return
     end
-    
+
     if cmd.Tag == "CMDFOR" then
         genFor(cmd, env)
         return
     end
-    
+
     if cmd.Tag == "CMDBREAK" then
         JUMP(topBreak())
         return
@@ -2101,7 +2101,6 @@ function genCodeCmd(cmd, env)
 
     genError(string.format("Couldn't evaluate command %s", cmd.Tag))
 end
-
 
 function genClosure(exp, env)
     -- make new env for function
@@ -2133,7 +2132,7 @@ function genReturn(cmd, env)
     if n_returned == 0 then
         RETURN(0)
     else
-        genCodeExp(cmd.ExpRetList[n_returned],env, nil, nil, -1) -- -1 here stands for any amount of return 
+        genCodeExp(cmd.ExpRetList[n_returned], env, nil, nil, -1) -- -1 here stands for any amount of return
         for i = n_returned - 1, 1, -1 do
             genCodeExp(cmd.ExpRetList[i], env)
         end
@@ -2157,7 +2156,7 @@ local function slow_concat(tbl)
 end
 
 local function FN_DECLARATION(fn_number)
-    print("FUNCTION "..FnLabel(fn_number).." "..tostring(CODE.Fns[fn_number].N_Args))
+    print("FUNCTION " .. FnLabel(fn_number) .. " " .. tostring(CODE.Fns[fn_number].N_Args))
     -- my slow concat
     print(slow_concat(CODE.Fns[fn_number]))
 end
