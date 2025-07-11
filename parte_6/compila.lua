@@ -261,7 +261,8 @@ local function readBigString(ls, string_depth, start_l, start_c)
                 str = str .. possible_str
             end
         elseif ls.chars[1] == nil then
-            error(string.format("Unclosed string or comment at line %d column %d!", ls.currentLine, ls.currentColumn))
+            error("Unclosed string or comment at line " ..
+            tostring(ls.currentLine) .. " column " .. tostring(ls.currentColumn))
         end
 
         str = str .. readCharInString(ls)
@@ -334,7 +335,7 @@ local function getToken(ls)
         return tok
     end
 
-    error(string.format("Couldn't lex token: line %d col %d", ls.currentLine, ls.currentColumn))
+    error("Couldn't lex token: line " .. tostring(ls.currentLine) .. " col " .. tostring(ls.currentColumn))
 end
 
 -- LEXER RESUMO:
@@ -434,7 +435,8 @@ local CMD_ENDERS = { "EOF", "END", "ELSE", "ELSEIF", "UNTIL" }
 --- PREC
 --- ASSOC
 local function syntaxError(tok, msg)
-    error(string.format("syntax error '%s' %d:%d. :%s", tok.Tag, tok.StartLine, tok.StartCol, msg))
+    local str = "syntaxError '" .. tok.Tag .. "' " .. tok.StartLine .. ":" .. tok.StartCol .. ". :" .. msg
+    error(str)
 end
 
 local function Prec(tag)
@@ -482,7 +484,7 @@ local function comeParser(ps, tag)
     if tk.Tag == tag then
         advanceParser(ps)
     else
-        syntaxError(tk, string.format("Parser leu %s, esperava: %s", tk.Tag, tag))
+        syntaxError(tk, "Parser leu " .. tk.Tag .. " esperava: " .. tag)
     end
 end
 
@@ -1642,9 +1644,6 @@ local function genCall(expcall, env, expected_ret)
     CALL(#expcall.Args, expected_ret)
 end
 
-
-local inspect = require("inspect")
-
 local function genCompleteNil(n_nils)
     for _ = 1, n_nils do
         PUSH_NIL()
@@ -1813,7 +1812,7 @@ function genCodeExp(exp, env, lbl_t, lbl_f, expected_ret)
         end
     end
 
-    genError(string.format("Could not gen exp %s", tostring(inspect(exp))))
+    genError("Could not gen exp " .. exp.Tag)
 end
 
 local function isBinopOp(exp, op)
@@ -2099,7 +2098,7 @@ function genCodeCmd(cmd, env)
         return
     end
 
-    genError(string.format("Couldn't evaluate command %s", cmd.Tag))
+    genError("Couldn't evaluate command " .. cmd.Tag)
 end
 
 function genClosure(exp, env)

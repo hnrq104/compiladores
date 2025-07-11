@@ -425,6 +425,12 @@ local table_instructions = {
         local val = vm_pop(vm)
         local key = vm_pop(vm)
         local tbl = vm_pop(vm)
+        if key.Val == nil then
+            print(vm.PC) 
+            print("val",inspect(val))
+            print("key",inspect(key))
+            print("tbl",inspect(key))
+        end
         tbl.Val[key.Val] = val
         vm.PC = vm.PC + 1
     end,
