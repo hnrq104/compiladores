@@ -1,7 +1,7 @@
 -- READING AND ASSEMBLING
 -- INSTRUCTION/LABEL READING
 
-local file_bytecode = assert(io.open(arg[1],"r"), "could not open file " .. arg[1])
+local file_bytecode = assert(io.open(arg[1], "r"), "could not open file " .. arg[1])
 io.input(file_bytecode)
 
 local inspect = require("inspect")
@@ -36,14 +36,14 @@ local function read_line(line)
     -- eh push string?
     local first_tok, second_tok, third_tok
     local is_push_str = string.find(line, "PUSH_STRING")
-    local is_error = string.find(line,"ERROR")
+    local is_error = string.find(line, "ERROR")
 
     if is_push_str or is_error then
         local first_quotes = string.find(line, '"')
         if not first_quotes then error("didn't find beginning of string") end
         local last_quotes = string.find(string.reverse(line), '"')
         second_tok = string.sub(line, first_quotes + 1, string.len(line) - last_quotes)
-        local tag = (is_push_str and "PUSH_STRING") or (is_error and "ERROR") 
+        local tag = (is_push_str and "PUSH_STRING") or (is_error and "ERROR")
 
         return { Tag = "INSTRUCTION", Inst = makeInst(tag, { prepare_string(second_tok) }) }
     end
@@ -197,15 +197,15 @@ local function makeValReturnList(valList)
 end
 
 local function make_LVal_Tbl(tbl, key)
-    return { Tag = "LVALTBL", Tbl = tbl, Index = key}
+    return { Tag = "LVALTBL", Tbl = tbl, Index = key }
 end
 
 local function make_LVal_Local(n_jumps, n_var)
-    return { Tag = "LVALLOCAL", N_Jumps = n_jumps, N_Var = n_var}
+    return { Tag = "LVALLOCAL", N_Jumps = n_jumps, N_Var = n_var }
 end
 
 local function make_LVal_Global(global_name)
-    return { Tag = "LVALGLOBAL", GlobalName = global_name}
+    return { Tag = "LVALGLOBAL", GlobalName = global_name }
 end
 
 --conditionals
@@ -309,7 +309,10 @@ end
 local function call(vm, f, f_args, n_ret)
     if f.Tag == "VALLIBFUNC" then
         local ret = f.F(f_args)
-        if ret.Tag ~= "VALNIL" then
+        if n_ret > 0 then
+            for _ = 2, n_ret do
+                vm_push(vm, makeValNil())
+            end
             vm_push(vm, ret)
         end
         vm.PC = vm.PC + 1
@@ -318,19 +321,19 @@ local function call(vm, f, f_args, n_ret)
 
     -- valluafunc
     vm.PC = vm.PC + 1 -- save return pointer!
-    vm_saveframe(vm) -- save old frame in callstack
-    
+    vm_saveframe(vm)  -- save old frame in callstack
+
     local f_number = f.FnNumber
     local num_param = vm.Fns[f_number][2]
     local new_env = makeEnv(f.Env)
 
-    
+
     for i = 1, num_param do
         if i <= #f_args then
             setLocal(new_env, 0, i, f_args[i])
         end
     end
-    
+
     vm_newframe(vm, f_number, 1, new_env, n_ret)
 end
 
@@ -415,7 +418,7 @@ local table_instructions = {
         local v = tbl.Val[key.Val]
         if v then
             vm_push(vm, v)
-        else 
+        else
             vm_push(vm, makeValNil())
         end
         vm.PC = vm.PC + 1
@@ -426,10 +429,10 @@ local table_instructions = {
         local key = vm_pop(vm)
         local tbl = vm_pop(vm)
         if key.Val == nil then
-            print(vm.PC) 
-            print("val",inspect(val))
-            print("key",inspect(key))
-            print("tbl",inspect(key))
+            print(vm.PC)
+            print("val", inspect(val))
+            print("key", inspect(key))
+            print("tbl", inspect(key))
         end
         tbl.Val[key.Val] = val
         vm.PC = vm.PC + 1
@@ -486,7 +489,7 @@ local table_instructions = {
             f_rets[pos] = vm_pop(vm)
         end
         f_rets = treat_list(f_rets)
-        
+
         ret(vm, f_rets)
     end,
 
@@ -709,24 +712,24 @@ local table_instructions = {
         vm.PC = vm.PC + 1
     end,
 
-    ["ENCAP_LOCAL"] = function (vm, args)
-        vm_push(vm, make_LVal_Local(args[1],args[2]))
+    ["ENCAP_LOCAL"] = function(vm, args)
+        vm_push(vm, make_LVal_Local(args[1], args[2]))
         vm.PC = vm.PC + 1
     end,
 
-    ["ENCAP_GLOBAL"] = function (vm, args)
+    ["ENCAP_GLOBAL"] = function(vm, args)
         vm_push(vm, make_LVal_Global(args[1]))
         vm.PC = vm.PC + 1
     end,
 
-    ["ENCAP_TBLSET"] = function (vm)
+    ["ENCAP_TBLSET"] = function(vm)
         local index = vm_pop(vm)
         local tbl = vm_pop(vm)
-        vm_push(vm, make_LVal_Tbl(tbl,index))
+        vm_push(vm, make_LVal_Tbl(tbl, index))
         vm.PC = vm.PC + 1
     end,
 
-    ["SETLIST"] = function (vm, args)
+    ["SETLIST"] = function(vm, args)
         local n = args[1]
         local sets = {}
         local values = {}
@@ -742,8 +745,8 @@ local table_instructions = {
         vm.PC = vm.PC + 1
     end,
 
-    ["ERROR"] = function (vm, args)
-        print(string.format("error: %s",args[1]))
+    ["ERROR"] = function(vm, args)
+        print(string.format("error: %s", args[1]))
         os.exit(1)
     end
 }
@@ -821,7 +824,7 @@ local GlobalEnv = {
                 if #nchars > 1 then
                     n = unbox(nchars[1], "VALINT")
                 end
-                c = io.read(n)
+                c = io.stdin:read(n)
                 if c == nil then
                     return makeValNil()
                 end
