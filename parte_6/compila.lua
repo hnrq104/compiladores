@@ -1858,11 +1858,18 @@ end
 
 local function genIf(cmdif, env)
     local lbl_f = newLabel()
+    -- we can Later optimize this if no elses
+    local lbl_end = cmdif.Elses and newLabel()
+
     genJmp(cmdif.ExpCond, env, nil, lbl_f)
     genCodeCmd(cmdif.Block, env)
+    if cmdif.Elses then
+        JUMP(lbl_end)
+    end
     writeLabel(lbl_f)
     if cmdif.Elses then
         genCodeCmd(cmdif.Elses, env)
+        writeLabel(lbl_end)
     end
 end
 
