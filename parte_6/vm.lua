@@ -9,12 +9,12 @@ local inspect = require("inspect")
 local string_rep_table = {
     ["\\n"] = "\n",
     ["\\t"] = "\t",
+    ["\\r"] = "\r",
     ["\\\\"] = "\\",
-
 }
 -- decode strings
 local function prepare_string(str)
-    local s = string.gsub(str, '\\[\\nt]', string_rep_table)
+    local s = string.gsub(str, '\\[\\ntr]', string_rep_table)
     return s
 end
 
@@ -308,6 +308,10 @@ end
 
 local function call(vm, f, f_args, n_ret)
     if f.Tag == "VALLIBFUNC" then
+        if n_ret == -1 then
+            n_ret = 1
+        end
+
         local ret = f.F(f_args)
         if n_ret > 0 then
             for _ = 2, n_ret do
@@ -320,6 +324,9 @@ local function call(vm, f, f_args, n_ret)
     end
 
     -- valluafunc
+    if f.Tag ~= "VALLUAFUNC" then
+        error("trying to call non-function")
+    end
     vm.PC = vm.PC + 1 -- save return pointer!
     vm_saveframe(vm)  -- save old frame in callstack
 
@@ -331,6 +338,8 @@ local function call(vm, f, f_args, n_ret)
     for i = 1, num_param do
         if i <= #f_args then
             setLocal(new_env, 0, i, f_args[i])
+        else
+            setLocal(new_env, 0, i, makeValNil())
         end
     end
 
@@ -428,12 +437,6 @@ local table_instructions = {
         local val = vm_pop(vm)
         local key = vm_pop(vm)
         local tbl = vm_pop(vm)
-        if key.Val == nil then
-            print(vm.PC)
-            print("val", inspect(val))
-            print("key", inspect(key))
-            print("tbl", inspect(key))
-        end
         tbl.Val[key.Val] = val
         vm.PC = vm.PC + 1
     end,
@@ -584,8 +587,9 @@ local table_instructions = {
         local b = vm_pop(vm)
         local a = vm_pop(vm)
         if a.Tag == "VALSTR" and b.Tag == "VALSTR" then
-            vm_push(vm, makeValInt(a.Val + b.Val))
+            vm_push(vm, makeValString(a.Val .. b.Val))
         else
+            print(inspect(a), inspect(b))
             error("trying to .. stuff that isn't string")
         end
         vm.PC = vm.PC + 1
@@ -776,7 +780,7 @@ local GlobalEnv = {
             for i = 1, #args do
                 io.write(tostring(args[i].Val))
                 if i < #args then
-                    io.write(" ")
+                    io.write("\t")
                 end
             end
             io.write("\n")
@@ -878,6 +882,14 @@ local GlobalEnv = {
                     return makeValInt(string.byte(s))
                 end
             ),
+
+            ["upper"] = makeValLibFunc(
+                function(args)
+                    argsize(args, 1, "string.upper")
+                    local s = unbox(args[1], "VALSTR")
+                    return makeValString(string.upper(s))
+                end
+            )
 
         }
     )

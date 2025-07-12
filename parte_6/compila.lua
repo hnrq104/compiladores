@@ -194,16 +194,16 @@ end
 
 
 
-local function readCharInString(ls)
-    local escaped_table = {
-        ["\\\\"] = "\\",
-        ["\\\""] = "\"",
-        ["\\\'"] = "\'",
-        ["\\n"] = "\n",
-        ["\\r"] = "\r",
-        ["\\t"] = "\t"
-    }
+local escaped_table = {
+    ["\\\\"] = "\\",
+    ["\\\""] = "\"",
+    ["\\\'"] = "\'",
+    ["\\n"] = "\n",
+    ["\\r"] = "\r",
+    ["\\t"] = "\t"
+}
 
+local function readCharInString(ls)
     if ls.chars[2] ~= nil then
         local es = ls.chars[1] .. ls.chars[2]
         if escaped_table[es] then
@@ -262,7 +262,7 @@ local function readBigString(ls, string_depth, start_l, start_c)
             end
         elseif ls.chars[1] == nil then
             error("Unclosed string or comment at line " ..
-            tostring(ls.currentLine) .. " column " .. tostring(ls.currentColumn))
+                tostring(ls.currentLine) .. " column " .. tostring(ls.currentColumn))
         end
 
         str = str .. readCharInString(ls)
@@ -714,7 +714,7 @@ local function parseField(ps)
     end
 
     if ps.tokens[1].Tag == "NAME" and ps.tokens[2].Tag == '=' then
-        expkey = makeExpName(ps.tokens[1].Value)
+        expkey = makeExpString(ps.tokens[1].Value)
         advanceParser(ps, 2)
     end
 
@@ -1390,14 +1390,6 @@ local function PUSH_NUMBER(n)
 end
 
 
--- this doesn't really work right
-local string_rep_table = {
-    ["\n"] = "\\n",
-    ["\t"] = "\\t",
-    ["\\"] = "\\\\",
-
-}
-
 local function escape_str_especifico(str)
     local new_str = ""
     local size = string.len(str)
@@ -1411,6 +1403,8 @@ local function escape_str_especifico(str)
             char = "\\t"
         elseif char == "\\" then
             char = "\\\\"
+        elseif char == "\r" then
+            char = "\\r"
         end
         new_str = new_str .. char
     end
@@ -1924,7 +1918,7 @@ local function genFor(cmd, env)
     genCodeCmd(cmd.Block, new_env)
 
     -- iter = iter + step
-    PUSH_NUMBER(1)
+    GET_LOCAL(0, pos_step)
     GET_LOCAL(0, pos_iter)
     ADD()
     SET_LOCAL(0, pos_iter)
@@ -2105,6 +2099,7 @@ function genClosure(exp, env)
     -- make new env for function
     local newenv = newFunctionEnv(env)
     for i = 1, #exp.Params do
+        local _
         _, newenv = addVar(exp.Params[i], newenv)
     end
 
