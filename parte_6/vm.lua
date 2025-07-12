@@ -801,6 +801,14 @@ local GlobalEnv = {
         end
     ),
 
+    ["tonumber"] = makeValLibFunc(
+        function(args)
+            argsize(args, 1, "tonumber")
+            local s = unbox(args[1], "VALSTR")
+            return makeValInt(tonumber(s))
+        end
+    ),
+
     ["error"] = makeValLibFunc(
         function(args)
             if #args >= 1 then
