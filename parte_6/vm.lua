@@ -380,7 +380,11 @@ local function setlist(vm, sets, values)
         elseif lval.Tag == "LVALGLOBAL" then
             vm.Globals[lval.GlobalName] = values[i]
         else -- lval.Tag == "LVALTBL"
-            lval.Tbl.Val[lval.Index.Val] = values[i]
+            local v = values[i]
+            if values[i].Tag == "VALNIL" then
+                v = nil -- removing from table
+            end
+            lval.Tbl.Val[lval.Index.Val] = v
         end
     end
 end
@@ -437,6 +441,12 @@ local table_instructions = {
         local val = vm_pop(vm)
         local key = vm_pop(vm)
         local tbl = vm_pop(vm)
+
+        -- removing from table
+        if val.Tag == "VALNIL" then
+            val = nil
+        end
+
         tbl.Val[key.Val] = val
         vm.PC = vm.PC + 1
     end,
@@ -492,7 +502,6 @@ local table_instructions = {
             f_rets[pos] = vm_pop(vm)
         end
         f_rets = treat_list(f_rets)
-
         ret(vm, f_rets)
     end,
 
@@ -514,6 +523,7 @@ local table_instructions = {
         if a.Tag == "VALTBL" then
             vm_push(vm, makeValInt(#a.Val))
         else
+            print(vm.PC, vm.CurrentF, inspect(a))
             error("trying to len non table")
         end
         vm.PC = vm.PC + 1
@@ -913,11 +923,11 @@ end
 local function run_vm(vm)
     while true do
         if vm.PC > #vm.Fns[vm.CurrentF][1] then -- function withou return
-            ret(vm, 0)
+            ret(vm, {})
+        else
+            local inst = vm.Fns[vm.CurrentF][1][vm.PC]
+            run_inst(vm, inst)
         end
-        local inst = vm.Fns[vm.CurrentF][1][vm.PC]
-        -- print(vm.CurrentF, vm.PC, inspect(inst))
-        run_inst(vm, inst)
     end
 end
 

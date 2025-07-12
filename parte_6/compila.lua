@@ -31,7 +31,7 @@ local spaces = { " ", "\t", "\n", "\r" }
 --- IS NUMBER
 --- IS ALPHANUMERIC
 local function isCharInStr(char, str)
-    for i = 1, #str do
+    for i = 1, string.len(str) do
         if char == string.sub(str, i, i) then return true end
     end
     return false
@@ -160,7 +160,9 @@ local function readOperator(ls)
     for i = 3, 1, -1 do
         local op = ""
         if ls.chars[i] ~= nil then
-            for j = 1, i do op = op .. ls.chars[j] end
+            for j = 1, i do
+                op = op .. ls.chars[j]
+            end
             if isInTable(op, operators) then
                 local tok = makeTok(op, nil, ls.currentLine, ls.currentColumn, ls.currentLine, ls.currentColumn + i)
                 updateLexerState(ls, i)
@@ -354,8 +356,6 @@ Value : nil, (string do nome), (string), (valor numerico),  nil
 StartCol, EndCol : (coluna que o token começa e termina)
 StartLine, EndLine : (linha que o token começa e termina)
 ]]
-
-
 
 
 
@@ -933,7 +933,8 @@ local function parseSufList(ps)
     local sufs = { suf, HasCall = (suf.Tag == "EXPCALL") }
     while ps.tokens[1].Tag == ',' do
         advanceParser(ps)
-        table.insert(sufs, parseSufixada(ps))
+        sufs[#sufs + 1] = parseSufixada(ps)
+        -- table.insert(sufs, parseSufixada(ps))
         sufs.HasCall = sufs.HasCall or (sufs[#sufs].Tag == "EXPCALL")
     end
     return sufs
@@ -1175,7 +1176,8 @@ function parseBloco(ps)
     local cmds = {}
     local c = parseCmd(ps)
     while c do
-        table.insert(cmds, c)
+        cmds[#cmds + 1] = c
+        -- table.insert(cmds, c)
         c = parseCmd(ps)
     end
     if #cmds == 1 then return cmds[1] end
